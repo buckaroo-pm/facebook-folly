@@ -1,0 +1,23 @@
+load('//:buckaroo_macros.bzl', 'buckaroo_deps_from_package')
+
+cxx_test(
+  name = 'compression',
+  srcs = [
+    'CompressionTest.cpp',
+  ],
+  deps = \
+    buckaroo_deps_from_package('github.com/buckaroo-pm/google-googletest') + [
+      '//:folly',
+    ],
+)
+
+cxx_test(
+  name = 'counters',
+  srcs = [
+    'CountersTest.cpp',
+  ],
+  deps = \
+    buckaroo_deps_from_package('github.com/buckaroo-pm/google-googletest') + [
+      '//:folly',
+    ],
+)

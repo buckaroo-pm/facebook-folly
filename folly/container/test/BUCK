@@ -1,0 +1,12 @@
+load('//:buckaroo_macros.bzl', 'buckaroo_deps_from_package')
+
+cxx_test(
+  name = 'access',
+  srcs = [
+    'AccessTest.cpp',
+  ],
+  deps = \
+    buckaroo_deps_from_package('github.com/buckaroo-pm/google-googletest') + [
+      '//:folly',
+    ],
+)

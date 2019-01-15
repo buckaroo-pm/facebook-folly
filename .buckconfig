@@ -1,0 +1,12 @@
+[project]
+  ignore = .git
+
+[parser]
+  default_build_file_syntax = SKYLARK
+
+[cxx]
+  should_remap_host_platform = true
+
+[cxx#linux-x86_64]
+  should_remap_host_platform = true
+  cxxppflags = -DFOLLY_NO_CONFIG=1 -D_GNU_SOURCE=1 -DFOLLY_HAVE_PTHREAD=1 -DFOLLY_HAVE_PTHREAD_ATFORK=1 -DFOLLY_HAVE_MEMRCHR=1 -DFOLLY_HAVE_CLOCK_GETTIME=1

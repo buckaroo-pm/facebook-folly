@@ -1,0 +1,54 @@
+targets = [ "//:folly" ]
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-context"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-crc"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-filesystem"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-intrusive"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-multi_index"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-program_options"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/boost-variant"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/google-double-conversion"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/google-glog"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/google-googletest"
+version = "branch=master"
+private = true
+
+[[dependency]]
+package = "github.com/buckaroo-pm/pkg-config-event"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/pkg-config-python2"
+version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/pkg-config-unwind"
+version = "branch=master"

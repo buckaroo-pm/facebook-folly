@@ -31,3 +31,11 @@ folly/m4/ltversion.m4
 folly/m4/lt~obsolete.m4
 folly/generate_fingerprint_tables
 folly/FingerprintTables.cpp
+
+
+.buckd
+buck-out
+buckaroo
+.buckconfig.local
+.buckconfig.d
+buckaroo_macros.bzl
