@@ -70,7 +70,7 @@ revision = "ea0eab9a8cf538aa81a7d53f1762a5ff7e628e73"
 
 [lock."github.com/buckaroo-pm/boost-assert"]
 versions = [ "branch=master" ]
-revision = "fc4d65435c49b5b4fbbf0d4867ee8f69bfd42ef1"
+revision = "417f80abf86251b29609a9747dae7756236699aa"
 
 [lock."github.com/buckaroo-pm/boost-atomic"]
 versions = [ "branch=master" ]
@@ -114,7 +114,7 @@ revision = "c8f7fe6cf4771e105f7c53486949a53aa0e9f017"
 
 [lock."github.com/buckaroo-pm/boost-date_time"]
 versions = [ "branch=master" ]
-revision = "62d4c50a60fb887acdf9161fd738beaae72ccac2"
+revision = "1bd50405ad500d9bfb723427b02a7a94aa9ebf4e"
 
 [lock."github.com/buckaroo-pm/boost-detail"]
 versions = [ "branch=master" ]
@@ -134,7 +134,7 @@ revision = "6915e064beb2d9da0cd8f644ee74c6946042bf13"
 
 [lock."github.com/buckaroo-pm/boost-function"]
 versions = [ "branch=master" ]
-revision = "8c1210ba8984d6d86625ffc3d94acf3b710fa6f8"
+revision = "291485cbda77efaee017c03dbc67c09f8abe303e"
 
 [lock."github.com/buckaroo-pm/boost-function_types"]
 versions = [ "branch=master" ]
@@ -166,7 +166,7 @@ revision = "040e45441844325cf42bbb45b275c32203a95375"
 
 [lock."github.com/buckaroo-pm/boost-math"]
 versions = [ "branch=master" ]
-revision = "daa2a5e51a7bcfaa5b3235fb3016ea1728e7a48c"
+revision = "83091dd8c4b3939e58a3619104504cdda212673a"
 
 [lock."github.com/buckaroo-pm/boost-move"]
 versions = [ "branch=master" ]
@@ -230,7 +230,7 @@ revision = "8256c9846a133573ff959e0a7dc0cadb8fba5192"
 
 [lock."github.com/buckaroo-pm/boost-system"]
 versions = [ "branch=master" ]
-revision = "d98315738ee47380f52e43d790d1c42cf549b175"
+revision = "16cad275bcf88549063d1f01a4fbf483ea36e7cd"
 
 [lock."github.com/buckaroo-pm/boost-thread"]
 versions = [ "branch=master" ]
@@ -254,7 +254,7 @@ revision = "5ffb0abec6da0d9986690b32d20218769a50086b"
 
 [lock."github.com/buckaroo-pm/boost-type_index"]
 versions = [ "branch=master" ]
-revision = "a8183e0bdcaafdda1183c0279137acadcb5b4466"
+revision = "e5d869f860393e8744ea34c70456d5d6dde1c308"
 
 [lock."github.com/buckaroo-pm/boost-type_traits"]
 versions = [ "branch=master" ]
@@ -274,7 +274,7 @@ revision = "57aa216434800315c9cd2664169e444e3070a677"
 
 [lock."github.com/buckaroo-pm/boost-variant"]
 versions = [ "branch=master" ]
-revision = "f95029191ed33a6370b690da81df903dc7db4cb1"
+revision = "949b6a0e4595c817bbe23f5dab2f85b16b547bf1"
 
 [lock."github.com/buckaroo-pm/boost-winapi"]
 versions = [ "branch=master" ]
