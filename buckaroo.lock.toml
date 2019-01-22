@@ -114,7 +114,7 @@ revision = "ef863a6ef47f4724803e0dee781d32eb7245a127"
 
 [lock."github.com/buckaroo-pm/boost-date_time"]
 versions = [ "branch=master" ]
-revision = "1bd50405ad500d9bfb723427b02a7a94aa9ebf4e"
+revision = "f2cfec352f9041e888caf3a2d2892d6d5b36e5fa"
 
 [lock."github.com/buckaroo-pm/boost-detail"]
 versions = [ "branch=master" ]
