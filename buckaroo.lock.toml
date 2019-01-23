@@ -302,7 +302,7 @@ revision = "cb8d2c1a2fcd344953e6c129a1a699a2c230551d"
 
 [lock."github.com/buckaroo-pm/icu4c"]
 versions = [ "branch=master" ]
-revision = "d6803681f02ef9395665d4db6e84a4416a679bc3"
+revision = "2bfbe715e2c1cd41e301b6a67fd50ae54273a504"
 
 [lock."github.com/buckaroo-pm/pkg-config-event"]
 versions = [ "branch=master" ]
