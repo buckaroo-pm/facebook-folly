@@ -218,7 +218,7 @@ revision = "7a75e06a78e0481cb636412a62764f628ec8e56b"
 
 [lock."github.com/buckaroo-pm/boost-regex"]
 versions = [ "branch=master" ]
-revision = "c03a752db0bc55e196e4866e7d8fb9792bfbe4a5"
+revision = "4ff94fc09b98f94f31e9fec6bb9312ec0a0f724a"
 
 [lock."github.com/buckaroo-pm/boost-serialization"]
 versions = [ "branch=master" ]
