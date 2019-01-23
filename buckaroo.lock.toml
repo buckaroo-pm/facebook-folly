@@ -166,7 +166,7 @@ revision = "9f6d656caf4b0037327c426219de6ef676a2ccdc"
 
 [lock."github.com/buckaroo-pm/boost-math"]
 versions = [ "branch=master" ]
-revision = "83091dd8c4b3939e58a3619104504cdda212673a"
+revision = "e5e11d021064a102a7f1258c8c52fcb40ca25be9"
 
 [lock."github.com/buckaroo-pm/boost-move"]
 versions = [ "branch=master" ]
@@ -179,6 +179,10 @@ revision = "6493fcda0f5cd2ee595346ca48ff495db9fa74d5"
 [lock."github.com/buckaroo-pm/boost-multi_index"]
 versions = [ "branch=master" ]
 revision = "ac518747840fee2f462b8bf3d61619cb7ed3efed"
+
+[lock."github.com/buckaroo-pm/boost-multiprecision"]
+versions = [ "branch=master" ]
+revision = "466fe3d1bec248781b4b26d98ee6cf0f57d92017"
 
 [lock."github.com/buckaroo-pm/boost-numeric_conversion"]
 versions = [ "branch=master" ]
@@ -232,6 +236,10 @@ revision = "8256c9846a133573ff959e0a7dc0cadb8fba5192"
 versions = [ "branch=master" ]
 revision = "16cad275bcf88549063d1f01a4fbf483ea36e7cd"
 
+[lock."github.com/buckaroo-pm/boost-test"]
+versions = [ "branch=master" ]
+revision = "205019c90a5e5e839fecabe65c3424f3a5887c49"
+
 [lock."github.com/buckaroo-pm/boost-thread"]
 versions = [ "branch=master" ]
 revision = "aeccb01c5ddaaec679f3c9651c0bc6dbdb7d2728"
@@ -263,6 +271,10 @@ revision = "b8e0fcc49cede65c3b4ef18ed5aa797225578467"
 [lock."github.com/buckaroo-pm/boost-typeof"]
 versions = [ "branch=master" ]
 revision = "e8cb7bc76c55f02a24f824fecf5cdf0629dc3aa4"
+
+[lock."github.com/buckaroo-pm/boost-ublas"]
+versions = [ "branch=master" ]
+revision = "1cf282fd9cca5c81388251c25c65adc0d3f8cfb3"
 
 [lock."github.com/buckaroo-pm/boost-unordered"]
 versions = [ "branch=master" ]
