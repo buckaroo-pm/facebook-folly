@@ -70,7 +70,7 @@ revision = "f326ae1e1b93216ce40e098a2baed4cc152d06ef"
 
 [lock."github.com/buckaroo-pm/boost-assert"]
 versions = [ "branch=master" ]
-revision = "628df4e4cb5226f05a35ea62830953dde79927f2"
+revision = "f9d6a7b63ef2902777b6078fdebc54e7a57aac03"
 
 [lock."github.com/buckaroo-pm/boost-atomic"]
 versions = [ "branch=master" ]
@@ -78,7 +78,7 @@ revision = "54e906eaa9d71c68bd0d990727f060e81389f3cb"
 
 [lock."github.com/buckaroo-pm/boost-bind"]
 versions = [ "branch=master" ]
-revision = "783ec0afe46d65f8cfdb558e16f25adc02797b3c"
+revision = "9ad7a5ff3b85224e2235657dbb9f48e8d548b43c"
 
 [lock."github.com/buckaroo-pm/boost-chrono"]
 versions = [ "branch=master" ]
@@ -102,7 +102,7 @@ revision = "ddd9a887f1f0253ded4455d455b3c54228067b74"
 
 [lock."github.com/buckaroo-pm/boost-context"]
 versions = [ "branch=master" ]
-revision = "de5f5fb602fe7229569f2cbbc7093ad80ae04821"
+revision = "d80cc3a2d3aeec56893f19d52b2f85811f64ca29"
 
 [lock."github.com/buckaroo-pm/boost-core"]
 versions = [ "branch=master" ]
@@ -110,7 +110,7 @@ revision = "4f59c5f06f11cd029a85d932ef51b9d511761f49"
 
 [lock."github.com/buckaroo-pm/boost-crc"]
 versions = [ "branch=master" ]
-revision = "ef863a6ef47f4724803e0dee781d32eb7245a127"
+revision = "1c1bdcb61115194a3ec575f546b723b93397fafe"
 
 [lock."github.com/buckaroo-pm/boost-date_time"]
 versions = [ "branch=master" ]
@@ -182,7 +182,7 @@ revision = "ac518747840fee2f462b8bf3d61619cb7ed3efed"
 
 [lock."github.com/buckaroo-pm/boost-multiprecision"]
 versions = [ "branch=master" ]
-revision = "466fe3d1bec248781b4b26d98ee6cf0f57d92017"
+revision = "d931e50f7e9eb5d846aab6dff882728802d84361"
 
 [lock."github.com/buckaroo-pm/boost-numeric_conversion"]
 versions = [ "branch=master" ]
@@ -242,7 +242,7 @@ revision = "205019c90a5e5e839fecabe65c3424f3a5887c49"
 
 [lock."github.com/buckaroo-pm/boost-thread"]
 versions = [ "branch=master" ]
-revision = "aeccb01c5ddaaec679f3c9651c0bc6dbdb7d2728"
+revision = "1ba5716fd1d093c99534c68bfff3aa95ba1f44e7"
 
 [lock."github.com/buckaroo-pm/boost-throw_exception"]
 versions = [ "branch=master" ]
