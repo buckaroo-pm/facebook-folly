@@ -58,7 +58,7 @@ revision = "81660693b6473d0ec6d000a01fd74b7dadd22106"
 
 [lock."github.com/buckaroo-pm/boost-align"]
 versions = [ "branch=master" ]
-revision = "6587b84e4fb0711bd7d0930b415ca7937e72021b"
+revision = "db53cd629da1af648babcd384bda7a4abcbf7b99"
 
 [lock."github.com/buckaroo-pm/boost-any"]
 versions = [ "branch=master" ]
@@ -230,7 +230,7 @@ revision = "7a147d3e6bead2fba47b60365fe1ae0c308768d5"
 
 [lock."github.com/buckaroo-pm/boost-static_assert"]
 versions = [ "branch=master" ]
-revision = "8256c9846a133573ff959e0a7dc0cadb8fba5192"
+revision = "fdc2df7f811436674a1c55c766b8830a8cd02e96"
 
 [lock."github.com/buckaroo-pm/boost-system"]
 versions = [ "branch=master" ]
@@ -246,7 +246,7 @@ revision = "1ba5716fd1d093c99534c68bfff3aa95ba1f44e7"
 
 [lock."github.com/buckaroo-pm/boost-throw_exception"]
 versions = [ "branch=master" ]
-revision = "788503e2365554d1860c6d2043999e3430d1f7a5"
+revision = "0e51209c88d65c95c3a134bab5c27758ff788f68"
 
 [lock."github.com/buckaroo-pm/boost-timer"]
 versions = [ "branch=master" ]
