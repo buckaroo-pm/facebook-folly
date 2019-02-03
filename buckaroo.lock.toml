@@ -62,7 +62,7 @@ revision = "6da7695406e00e3f59c47f1b0a369710db6e51f8"
 
 [lock."github.com/buckaroo-pm/boost-any"]
 versions = [ "branch=master" ]
-revision = "81b98182cb3314fab2ac4a30fc2cccb43b7cff51"
+revision = "995fefc2fe5a65da93c65d3eea725808a70024aa"
 
 [lock."github.com/buckaroo-pm/boost-array"]
 versions = [ "branch=master" ]
@@ -114,7 +114,7 @@ revision = "1c1bdcb61115194a3ec575f546b723b93397fafe"
 
 [lock."github.com/buckaroo-pm/boost-date_time"]
 versions = [ "branch=master" ]
-revision = "f2cfec352f9041e888caf3a2d2892d6d5b36e5fa"
+revision = "13c05a329b876e178c94f6e36c31e4e60bf6d85a"
 
 [lock."github.com/buckaroo-pm/boost-detail"]
 versions = [ "branch=master" ]
@@ -222,7 +222,7 @@ revision = "1db2ae17e5e5b188688bbab0fca61731b4d9d6d8"
 
 [lock."github.com/buckaroo-pm/boost-serialization"]
 versions = [ "branch=master" ]
-revision = "9e8d936f28b7a384aa6988875967bc43ca665286"
+revision = "38c41c38fa602585abfe131b1c889310dbaadf24"
 
 [lock."github.com/buckaroo-pm/boost-smart_ptr"]
 versions = [ "branch=master" ]
@@ -234,7 +234,7 @@ revision = "fdc2df7f811436674a1c55c766b8830a8cd02e96"
 
 [lock."github.com/buckaroo-pm/boost-system"]
 versions = [ "branch=master" ]
-revision = "16cad275bcf88549063d1f01a4fbf483ea36e7cd"
+revision = "623a2c80a8448da0df4e7f20102e9e929e355551"
 
 [lock."github.com/buckaroo-pm/boost-test"]
 versions = [ "branch=master" ]
@@ -242,7 +242,7 @@ revision = "205019c90a5e5e839fecabe65c3424f3a5887c49"
 
 [lock."github.com/buckaroo-pm/boost-thread"]
 versions = [ "branch=master" ]
-revision = "8d90d717bfaf52f39b355c1a530ad08ae0404bf0"
+revision = "81a99237d46a86e08a513234d3ab557dabf4a86b"
 
 [lock."github.com/buckaroo-pm/boost-throw_exception"]
 versions = [ "branch=master" ]
