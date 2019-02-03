@@ -54,7 +54,7 @@ target = "//:unwind"
 
 [lock."github.com/buckaroo-pm/boost-algorithm"]
 versions = [ "branch=master" ]
-revision = "81660693b6473d0ec6d000a01fd74b7dadd22106"
+revision = "eab7c8d0b43f176fa15e6d541a953e56643c2a62"
 
 [lock."github.com/buckaroo-pm/boost-align"]
 versions = [ "branch=master" ]
@@ -66,7 +66,7 @@ revision = "81b98182cb3314fab2ac4a30fc2cccb43b7cff51"
 
 [lock."github.com/buckaroo-pm/boost-array"]
 versions = [ "branch=master" ]
-revision = "f326ae1e1b93216ce40e098a2baed4cc152d06ef"
+revision = "33b398e1da5f9267d4c1e54df8651beaee611102"
 
 [lock."github.com/buckaroo-pm/boost-assert"]
 versions = [ "branch=master" ]
@@ -74,7 +74,7 @@ revision = "f9d6a7b63ef2902777b6078fdebc54e7a57aac03"
 
 [lock."github.com/buckaroo-pm/boost-atomic"]
 versions = [ "branch=master" ]
-revision = "54e906eaa9d71c68bd0d990727f060e81389f3cb"
+revision = "3c7e658914247c4b27511d2a46f59be614e2f7bf"
 
 [lock."github.com/buckaroo-pm/boost-bind"]
 versions = [ "branch=master" ]
@@ -242,7 +242,7 @@ revision = "205019c90a5e5e839fecabe65c3424f3a5887c49"
 
 [lock."github.com/buckaroo-pm/boost-thread"]
 versions = [ "branch=master" ]
-revision = "1ba5716fd1d093c99534c68bfff3aa95ba1f44e7"
+revision = "8d90d717bfaf52f39b355c1a530ad08ae0404bf0"
 
 [lock."github.com/buckaroo-pm/boost-throw_exception"]
 versions = [ "branch=master" ]
@@ -290,7 +290,7 @@ revision = "949b6a0e4595c817bbe23f5dab2f85b16b547bf1"
 
 [lock."github.com/buckaroo-pm/boost-winapi"]
 versions = [ "branch=master" ]
-revision = "92c47b2e1db8a7c023d394e979f81438b410fd18"
+revision = "44002f228a0b91c556cd41f8ceb5b4bff7745166"
 
 [lock."github.com/buckaroo-pm/gflags"]
 versions = [ "branch=master" ]
