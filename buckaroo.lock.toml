@@ -126,7 +126,7 @@ revision = "c43bde6de716aeaa1958f523576599c384791da2"
 
 [lock."github.com/buckaroo-pm/boost-filesystem"]
 versions = [ "branch=master" ]
-revision = "c62175acfd4e66a2aba51a8d2188a5a5e0781217"
+revision = "4e51657e113d9218e8a51000a19a0c9a27f33f63"
 
 [lock."github.com/buckaroo-pm/boost-foreach"]
 versions = [ "branch=master" ]
