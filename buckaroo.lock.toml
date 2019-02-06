@@ -130,7 +130,7 @@ revision = "c62175acfd4e66a2aba51a8d2188a5a5e0781217"
 
 [lock."github.com/buckaroo-pm/boost-foreach"]
 versions = [ "branch=master" ]
-revision = "3640a2fff774a36e833f4fe86d7fd3786baf7c1a"
+revision = "2e9e1870f384cc9dc876d9ceb8a7976b94d71a9f"
 
 [lock."github.com/buckaroo-pm/boost-function"]
 versions = [ "branch=master" ]
