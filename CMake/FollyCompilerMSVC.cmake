@@ -25,11 +25,10 @@ if (NOT MSVC_FAVORED_ARCHITECTURE STREQUAL "blend" AND NOT MSVC_FAVORED_ARCHITEC
   message(FATAL_ERROR "MSVC_FAVORED_ARCHITECTURE must be set to one of exactly, 'blend', 'AMD64', 'INTEL64', or 'ATOM'! Got '${MSVC_FAVORED_ARCHITECTURE}' instead!")
 endif()
 
-set(MSVC_LANGUAGE_VERSION "c++latest" CACHE STRING "One of 'c++14', 'c++17', or 'c++latest'. This determines which version of C++ to compile as.")
+set(MSVC_LANGUAGE_VERSION "c++latest" CACHE STRING "One of 'c++17', or 'c++latest'. This determines which version of C++ to compile as.")
 set_property(
   CACHE MSVC_LANGUAGE_VERSION
   PROPERTY STRINGS
-    "c++14"
     "c++17"
     "c++latest"
 )
@@ -80,7 +79,7 @@ function(apply_folly_compile_options_to_target THETARGET)
   # The general options passed:
   target_compile_options(${THETARGET}
     PUBLIC
-      /EHa # Enable both SEH and C++ Exceptions.
+      /EHs # Don't catch structured exceptions with catch (...)
       /GF # There are bugs with constexpr StringPiece when string pooling is disabled.
       /Zc:referenceBinding # Disallow temporaries from binding to non-const lvalue references.
       /Zc:rvalueCast # Enforce the standard rules for explicit type conversion.
@@ -203,6 +202,7 @@ function(apply_folly_compile_options_to_target THETARGET)
       /wd4435 # Object layout under /vd2 will change due to virtual base.
       /wd4514 # Unreferenced inline function has been removed. (caused by /Zc:inline)
       /wd4548 # Expression before comma has no effect. I wouldn't disable this normally, but malloc.h triggers this warning.
+      /wd4571 # Semantics of catch(...) changed in VC 7.1
       /wd4574 # ifdef'd macro was defined to 0.
       /wd4582 # Constructor is not implicitly called.
       /wd4583 # Destructor is not implicitly called.

@@ -18,7 +18,6 @@
 
 #include <cstddef>
 
-#include <boost/noncopyable.hpp>
 #include <glog/logging.h>
 
 #include <folly/io/async/EventUtil.h>
@@ -36,7 +35,7 @@ class EventBase;
  * Users that wish to wait on I/O events should derive from EventHandler and
  * implement the handlerReady() method.
  */
-class EventHandler : private boost::noncopyable {
+class EventHandler {
  public:
   enum EventFlags {
     NONE = 0,
@@ -62,11 +61,12 @@ class EventHandler : private boost::noncopyable {
    *                   descriptor must be set separately using initHandler() or
    *                   changeHandlerFD() before the handler can be registered.
    */
-  explicit EventHandler(EventBase* eventBase, int fd)
-      : EventHandler(eventBase, NetworkSocket::fromFd(fd)) {}
   explicit EventHandler(
       EventBase* eventBase = nullptr,
       NetworkSocket fd = NetworkSocket());
+
+  EventHandler(const EventHandler&) = delete;
+  EventHandler& operator=(const EventHandler&) = delete;
 
   /**
    * EventHandler destructor.

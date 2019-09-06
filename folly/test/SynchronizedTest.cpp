@@ -19,7 +19,6 @@
 
 #include <folly/Synchronized.h>
 #include <folly/Function.h>
-#include <folly/LockTraitsBoost.h>
 #include <folly/Portability.h>
 #include <folly/ScopeGuard.h>
 #include <folly/SharedMutex.h>
@@ -44,17 +43,10 @@ using SynchronizedTestTypes = testing::Types<
     std::timed_mutex,
     std::recursive_timed_mutex,
 #endif
-    boost::mutex,
-    boost::recursive_mutex,
-#if FOLLY_LOCK_TRAITS_HAVE_TIMED_MUTEXES
-    boost::timed_mutex,
-    boost::recursive_timed_mutex,
-#endif
 #ifdef RW_SPINLOCK_USE_X86_INTRINSIC_
     folly::RWTicketSpinLock32,
     folly::RWTicketSpinLock64,
 #endif
-    boost::shared_mutex,
     folly::SpinLock>;
 TYPED_TEST_CASE(SynchronizedTest, SynchronizedTestTypes);
 
@@ -113,9 +105,6 @@ using SynchronizedTimedTestTypes = testing::Types<
 #if FOLLY_LOCK_TRAITS_HAVE_TIMED_MUTEXES
     std::timed_mutex,
     std::recursive_timed_mutex,
-    boost::timed_mutex,
-    boost::recursive_timed_mutex,
-    boost::shared_mutex,
 #endif
 #ifdef RW_SPINLOCK_USE_X86_INTRINSIC_
     folly::RWTicketSpinLock32,
@@ -137,9 +126,6 @@ template <class Mutex>
 class SynchronizedTimedWithConstTest : public testing::Test {};
 
 using SynchronizedTimedWithConstTestTypes = testing::Types<
-#if FOLLY_LOCK_TRAITS_HAVE_TIMED_MUTEXES
-    boost::shared_mutex,
-#endif
 #ifdef RW_SPINLOCK_USE_X86_INTRINSIC_
     folly::RWTicketSpinLock32,
     folly::RWTicketSpinLock64,
@@ -375,6 +361,26 @@ TEST_F(SynchronizedLockTest, TestCopyConstructibleValues) {
       std::is_copy_assignable<folly::Synchronized<CopyConstructible>>::value);
 }
 
+namespace {
+class Dummy {
+ public:
+  void foo() {}
+};
+} // namespace
+
+TEST_F(SynchronizedLockTest, ReadLockAsNonConstUnsafe) {
+  {
+    folly::Synchronized<Dummy> sync;
+    auto rlock = sync.rlock();
+    rlock.asNonConstUnsafe().foo();
+  }
+  {
+    folly::Synchronized<Dummy> sync;
+    auto rlock = sync.rlock(std::chrono::seconds{1});
+    rlock.asNonConstUnsafe().foo();
+  }
+}
+
 TEST_F(SynchronizedLockTest, UpgradeLocking) {
   folly::Synchronized<int, FakeAllPowerfulAssertingMutex> sync;
 
@@ -385,6 +391,9 @@ TEST_F(SynchronizedLockTest, UpgradeLocking) {
 
   {
     auto ulock = sync.ulock();
+    EXPECT_TRUE((std::is_same<decltype(*ulock), const int&>::value));
+    EXPECT_TRUE(
+        (std::is_same<decltype(ulock.asNonConstUnsafe()), int&>::value));
     EXPECT_EQ(
         globalAllPowerfulAssertingMutex.lock_state,
         FakeAllPowerfulAssertingMutexInternal::CurrentLockState::UPGRADE);
@@ -399,6 +408,7 @@ TEST_F(SynchronizedLockTest, UpgradeLocking) {
   {
     auto ulock = sync.ulock();
     auto wlock = ulock.moveFromUpgradeToWrite();
+    EXPECT_TRUE((std::is_same<decltype(*wlock), int&>::value));
     EXPECT_EQ(static_cast<bool>(ulock), false);
     EXPECT_EQ(
         globalAllPowerfulAssertingMutex.lock_state,
@@ -430,6 +440,9 @@ TEST_F(SynchronizedLockTest, UpgradeLocking) {
     auto wlock = sync.wlock();
     auto ulock = wlock.moveFromWriteToUpgrade();
     EXPECT_EQ(static_cast<bool>(wlock), false);
+    EXPECT_TRUE((std::is_same<decltype(*ulock), const int&>::value));
+    EXPECT_TRUE(
+        (std::is_same<decltype(ulock.asNonConstUnsafe()), int&>::value));
     EXPECT_EQ(
         globalAllPowerfulAssertingMutex.lock_state,
         FakeAllPowerfulAssertingMutexInternal::CurrentLockState::UPGRADE);
@@ -445,6 +458,9 @@ TEST_F(SynchronizedLockTest, UpgradeLocking) {
     auto wlock = sync.wlock();
     auto slock = wlock.moveFromWriteToRead();
     EXPECT_EQ(static_cast<bool>(wlock), false);
+    EXPECT_TRUE((std::is_same<decltype(*slock), const int&>::value));
+    EXPECT_TRUE(
+        (std::is_same<decltype(slock.asNonConstUnsafe()), int&>::value));
     EXPECT_EQ(
         globalAllPowerfulAssertingMutex.lock_state,
         FakeAllPowerfulAssertingMutexInternal::CurrentLockState::SHARED);

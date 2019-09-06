@@ -164,10 +164,14 @@ EventBase::~EventBase() {
   }
 
   // Call all destruction callbacks, before we start cleaning up our state.
-  while (!onDestructionCallbacks_.empty()) {
-    LoopCallback* callback = &onDestructionCallbacks_.front();
-    onDestructionCallbacks_.pop_front();
-    callback->runLoopCallback();
+  while (!onDestructionCallbacks_.rlock()->empty()) {
+    OnDestructionCallback::List callbacks;
+    onDestructionCallbacks_.swap(callbacks);
+    while (!callbacks.empty()) {
+      auto& callback = callbacks.front();
+      callbacks.pop_front();
+      callback.runCallback();
+    }
   }
 
   clearCobTimeouts();
@@ -541,10 +545,18 @@ void EventBase::runInLoop(Func cob, bool thisIteration) {
   }
 }
 
-void EventBase::runOnDestruction(LoopCallback* callback) {
-  std::lock_guard<std::mutex> lg(onDestructionCallbacksMutex_);
-  callback->cancelLoopCallback();
-  onDestructionCallbacks_.push_back(*callback);
+void EventBase::runOnDestruction(OnDestructionCallback& callback) {
+  callback.schedule(
+      [this](auto& cb) { onDestructionCallbacks_.wlock()->push_back(cb); },
+      [this](auto& cb) {
+        onDestructionCallbacks_.withWLock(
+            [&](auto& list) { list.erase(list.iterator_to(cb)); });
+      });
+}
+
+void EventBase::runOnDestruction(Func f) {
+  auto* callback = new FunctionOnDestructionCallback(std::move(f));
+  runOnDestruction(*callback);
 }
 
 void EventBase::runBeforeLoop(LoopCallback* callback) {
@@ -553,61 +565,45 @@ void EventBase::runBeforeLoop(LoopCallback* callback) {
   runBeforeLoopCallbacks_.push_back(*callback);
 }
 
-bool EventBase::runInEventBaseThread(Func fn) {
+void EventBase::runInEventBaseThread(Func fn) noexcept {
   // Send the message.
   // It will be received by the FunctionRunner in the EventBase's thread.
 
   // We try not to schedule nullptr callbacks
   if (!fn) {
-    LOG(ERROR) << "EventBase " << this
-               << ": Scheduling nullptr callbacks is not allowed";
-    return false;
+    DLOG(FATAL) << "EventBase " << this
+                << ": Scheduling nullptr callbacks is not allowed";
+    return;
   }
 
   // Short-circuit if we are already in our event base
   if (inRunningEventBaseThread()) {
     runInLoop(std::move(fn));
-    return true;
+    return;
   }
 
-  try {
-    queue_->putMessage(std::move(fn));
-  } catch (const std::exception& ex) {
-    LOG(ERROR) << "EventBase " << this << ": failed to schedule function "
-               << "for EventBase thread: " << ex.what();
-    return false;
-  }
-
-  return true;
+  queue_->putMessage(std::move(fn));
 }
 
-bool EventBase::runInEventBaseThreadAlwaysEnqueue(Func fn) {
+void EventBase::runInEventBaseThreadAlwaysEnqueue(Func fn) noexcept {
   // Send the message.
   // It will be received by the FunctionRunner in the EventBase's thread.
 
   // We try not to schedule nullptr callbacks
   if (!fn) {
-    LOG(ERROR) << "EventBase " << this
-               << ": Scheduling nullptr callbacks is not allowed";
-    return false;
+    LOG(DFATAL) << "EventBase " << this
+                << ": Scheduling nullptr callbacks is not allowed";
+    return;
   }
 
-  try {
-    queue_->putMessage(std::move(fn));
-  } catch (const std::exception& ex) {
-    LOG(ERROR) << "EventBase " << this << ": failed to schedule function "
-               << "for EventBase thread: " << ex.what();
-    return false;
-  }
-
-  return true;
+  queue_->putMessage(std::move(fn));
 }
 
-bool EventBase::runInEventBaseThreadAndWait(Func fn) {
+void EventBase::runInEventBaseThreadAndWait(Func fn) noexcept {
   if (inRunningEventBaseThread()) {
-    LOG(ERROR) << "EventBase " << this << ": Waiting in the event loop is not "
-               << "allowed";
-    return false;
+    LOG(DFATAL) << "EventBase " << this << ": Waiting in the event loop is not "
+                << "allowed";
+    return;
   }
 
   Baton<> ready;
@@ -620,16 +616,13 @@ bool EventBase::runInEventBaseThreadAndWait(Func fn) {
     copy(std::move(fn))();
   });
   ready.wait();
-
-  return true;
 }
 
-bool EventBase::runImmediatelyOrRunInEventBaseThreadAndWait(Func fn) {
+void EventBase::runImmediatelyOrRunInEventBaseThreadAndWait(Func fn) noexcept {
   if (isInEventBaseThread()) {
     fn();
-    return true;
   } else {
-    return runInEventBaseThreadAndWait(std::move(fn));
+    runInEventBaseThreadAndWait(std::move(fn));
   }
 }
 
@@ -801,5 +794,49 @@ EventBase* EventBase::getEventBase() {
   return this;
 }
 
+EventBase::OnDestructionCallback::~OnDestructionCallback() {
+  if (*scheduled_.rlock()) {
+    LOG(FATAL)
+        << "OnDestructionCallback must be canceled if needed prior to destruction";
+  }
+}
+
+void EventBase::OnDestructionCallback::runCallback() noexcept {
+  scheduled_.withWLock([&](bool& scheduled) {
+    CHECK(scheduled);
+    scheduled = false;
+
+    // run can only be called by EventBase and VirtualEventBase, and it's called
+    // after the callback has been popped off the list.
+    eraser_ = nullptr;
+
+    // Note that the exclusive lock on shared state is held while the callback
+    // runs. This ensures concurrent callers to cancel() block until the
+    // callback finishes.
+    onEventBaseDestruction();
+  });
+}
+
+void EventBase::OnDestructionCallback::schedule(
+    FunctionRef<void(OnDestructionCallback&)> linker,
+    Function<void(OnDestructionCallback&)> eraser) {
+  eraser_ = std::move(eraser);
+  scheduled_.withWLock([](bool& scheduled) { scheduled = true; });
+  linker(*this);
+}
+
+bool EventBase::OnDestructionCallback::cancel() {
+  return scheduled_.withWLock([this](bool& scheduled) {
+    const bool wasScheduled = std::exchange(scheduled, false);
+    if (wasScheduled) {
+      auto eraser = std::move(eraser_);
+      CHECK(eraser);
+      eraser(*this);
+    }
+    return wasScheduled;
+  });
+}
+
 constexpr std::chrono::milliseconds EventBase::SmoothLoopTime::buffer_interval_;
+
 } // namespace folly

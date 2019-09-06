@@ -98,6 +98,15 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
      * @param ex        An exception describing the error that occurred.
      */
     virtual void connectErr(const AsyncSocketException& ex) noexcept = 0;
+
+    /**
+     * preConnect() will be invoked just before the actual connect happens,
+     *              default is no-ops.
+     *
+     * @param fd      An underneath created socket, use for connection.
+     *
+     */
+    virtual void preConnect(NetworkSocket /*fd*/) {}
   };
 
   class EvbChangeCallback {
@@ -146,10 +155,15 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
 
     /**
      * getFlags() will be invoked to retrieve the desired flags to be passed
-     * to ::sendmsg() system call. This method was intentionally declared
-     * non-virtual, so there is no way to override it. Instead feel free to
-     * override getFlagsImpl(flags, defaultFlags) method instead, and enjoy
-     * the convenience of defaultFlags passed there.
+     * to ::sendmsg() system call. It is responsible for converting flags set in
+     * the passed folly::WriteFlags enum into a integer flag bitmask that can be
+     * passed to ::sendmsg. Some flags in folly::WriteFlags do not correspond to
+     * flags that can be passed to ::sendmsg and may instead be handled via
+     * getAncillaryData.
+     *
+     * This method was intentionally declared non-virtual, so there is no way to
+     * override it. Instead feel free to override getFlagsImpl(...) instead, and
+     * enjoy the convenience of defaultFlags passed there.
      *
      * @param flags     Write flags requested for the given write operation
      */
@@ -160,7 +174,9 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
     /**
      * getAncillaryData() will be invoked to initialize ancillary data
      * buffer referred by "msg_control" field of msghdr structure passed to
-     * ::sendmsg() system call. The function assumes that the size of buffer
+     * ::sendmsg() system call based on the flags set in the passed
+     * folly::WriteFlags enum. Some flags in folly::WriteFlags are not relevant
+     * during this process. The function assumes that the size of buffer
      * is not smaller than the value returned by getAncillaryDataSize() method
      * for the same combination of flags.
      *
@@ -262,8 +278,6 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
    * @param fd  File descriptor to take over (should be a connected socket).
    * @param zeroCopyBufId Zerocopy buf id to start with.
    */
-  AsyncSocket(EventBase* evb, int fd, uint32_t zeroCopyBufId = 0)
-      : AsyncSocket(evb, NetworkSocket::fromFd(fd), zeroCopyBufId) {}
   AsyncSocket(EventBase* evb, NetworkSocket fd, uint32_t zeroCopyBufId = 0);
 
   /**
@@ -310,9 +324,6 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
   /**
    * Helper function to create a shared_ptr<AsyncSocket>.
    */
-  static std::shared_ptr<AsyncSocket> newSocket(EventBase* evb, int fd) {
-    return newSocket(evb, NetworkSocket::fromFd(fd));
-  }
   static std::shared_ptr<AsyncSocket> newSocket(
       EventBase* evb,
       NetworkSocket fd) {
@@ -337,12 +348,8 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
   }
 
   /**
-   * Get the file descriptor used by the AsyncSocket.
+   * Get the network socket used by the AsyncSocket.
    */
-  virtual int getFd() const {
-    return getNetworkSocket().toFd();
-  }
-
   virtual NetworkSocket getNetworkSocket() const {
     return fd_;
   }
@@ -361,10 +368,6 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
    * Returns the file descriptor.  The caller assumes ownership of the
    * descriptor, and it will not be closed when the AsyncSocket is destroyed.
    */
-  virtual int detachFd() {
-    return detachNetworkSocket().toFd();
-  }
-
   virtual NetworkSocket detachNetworkSocket();
 
   /**
@@ -712,6 +715,26 @@ class AsyncSocket : virtual public AsyncTransportWrapper {
    * Set the recv bufsize
    */
   int setRecvBufSize(size_t bufsize);
+
+#if __linux__
+  /**
+   * @brief This method is used to get the number of bytes that are currently
+   *        stored in the TCP send/tx buffer
+   *
+   * @return the number of bytes in the send/tx buffer or folly::none if there
+   *         was a problem
+   */
+  size_t getSendBufInUse() const;
+
+  /**
+   * @brief This method is used to get the number of bytes that are currently
+   *        stored in the TCP receive/rx buffer
+   *
+   * @return the number of bytes in the receive/rx buffer or folly::none if
+   *         there was a problem
+   */
+  size_t getRecvBufInUse() const;
+#endif
 
 /**
  * Sets a specific tcp personality

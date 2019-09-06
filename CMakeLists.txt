@@ -8,8 +8,19 @@ if (POLICY CMP0057)
   cmake_policy(SET CMP0057 NEW)
 endif()
 
+# CMP0075 Include file check macros honor CMAKE_REQUIRED_LIBRARIES
+if(POLICY CMP0075)
+  cmake_policy(SET CMP0075 NEW)
+endif()
+
 # includes
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH
+  "${CMAKE_CURRENT_SOURCE_DIR}/CMake"
+  # for in-fbsource builds
+  "${CMAKE_CURRENT_SOURCE_DIR}/../opensource/fbcode_builder/CMake"
+  # For shipit-transformed builds
+  "${CMAKE_CURRENT_SOURCE_DIR}/build/fbcode_builder/CMake"
+  ${CMAKE_MODULE_PATH})
 
 # package information
 set(PACKAGE_NAME      "folly")
@@ -117,6 +128,7 @@ list(REMOVE_ITEM files
   ${FOLLY_DIR}/experimental/io/HugePageUtil.cpp
   ${FOLLY_DIR}/python/fibers.cpp
   ${FOLLY_DIR}/python/GILAwareManualExecutor.cpp
+  ${FOLLY_DIR}/cybld/folly/executor.cpp
 )
 list(REMOVE_ITEM hfiles
   ${FOLLY_DIR}/python/fibers.h
@@ -124,13 +136,15 @@ list(REMOVE_ITEM hfiles
 )
 
 # Explicitly include utility library code from inside
-# folly/test and folly/io/async/test/
+# test subdirs
 list(APPEND files
   ${FOLLY_DIR}/io/async/test/ScopedBoundPort.cpp
   ${FOLLY_DIR}/io/async/test/SocketPair.cpp
   ${FOLLY_DIR}/io/async/test/TimeUtil.cpp
 )
 list(APPEND hfiles
+  ${FOLLY_DIR}/container/test/F14TestUtil.h
+  ${FOLLY_DIR}/container/test/TrackingTypes.h
   ${FOLLY_DIR}/io/async/test/AsyncSSLSocketTest.h
   ${FOLLY_DIR}/io/async/test/AsyncSocketTest.h
   ${FOLLY_DIR}/io/async/test/AsyncSocketTest2.h
@@ -147,6 +161,9 @@ list(APPEND hfiles
   ${FOLLY_DIR}/io/async/test/TimeUtil.h
   ${FOLLY_DIR}/io/async/test/UndelayedDestruction.h
   ${FOLLY_DIR}/io/async/test/Util.h
+  ${FOLLY_DIR}/synchronization/test/Semaphore.h
+  ${FOLLY_DIR}/test/DeterministicSchedule.h
+  ${FOLLY_DIR}/test/JsonTestUtil.h
   ${FOLLY_DIR}/test/TestUtils.h
 )
 
@@ -169,6 +186,54 @@ if (NOT ${LIBAIO_FOUND})
     ${FOLLY_DIR}/experimental/io/AsyncIO.h
   )
 endif()
+if (${LIBSODIUM_FOUND})
+  string(FIND "${CMAKE_LIBRARY_ARCHITECTURE}" "x86_64" IS_X86_64_ARCH)
+  if (${IS_X86_64_ARCH} STREQUAL "-1")
+    message(
+      STATUS
+      "arch ${CMAKE_LIBRARY_ARCHITECTURE} does not match x86_64, "
+      "skipping setting SSE2/AVX2 compile flags for LtHash SIMD code"
+    )
+  else()
+    message(
+      STATUS
+      "arch ${CMAKE_LIBRARY_ARCHITECTURE} matches x86_64, "
+      "setting SSE2/AVX2 compile flags for LtHash SIMD code"
+    )
+    set_source_files_properties(
+      ${FOLLY_DIR}/experimental/crypto/detail/MathOperation_AVX2.cpp
+      PROPERTIES
+      COMPILE_FLAGS
+      -mavx -mavx2 -msse2
+    )
+    set_source_files_properties(
+      ${FOLLY_DIR}/experimental/crypto/detail/MathOperation_Simple.cpp
+      PROPERTIES
+      COMPILE_FLAGS
+      -mno-avx -mno-avx2 -mno-sse2
+    )
+    set_source_files_properties(
+      ${FOLLY_DIR}/experimental/crypto/detail/MathOperation_SSE2.cpp
+      PROPERTIES
+      COMPILE_FLAGS
+      -mno-avx -mno-avx2 -msse2
+    )
+  endif()
+else()
+  list(REMOVE_ITEM files
+    ${FOLLY_DIR}/experimental/crypto/Blake2xb.cpp
+    ${FOLLY_DIR}/experimental/crypto/detail/MathOperation_AVX2.cpp
+    ${FOLLY_DIR}/experimental/crypto/detail/MathOperation_Simple.cpp
+    ${FOLLY_DIR}/experimental/crypto/detail/MathOperation_SSE2.cpp
+    ${FOLLY_DIR}/experimental/crypto/LtHash.cpp
+  )
+  list(REMOVE_ITEM hfiles
+    ${FOLLY_DIR}/experimental/crypto/Blake2xb.h
+    ${FOLLY_DIR}/experimental/crypto/detail/LtHashInternal.h
+    ${FOLLY_DIR}/experimental/crypto/LtHash-inl.h
+    ${FOLLY_DIR}/experimental/crypto/LtHash.h
+  )
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
   list(REMOVE_ITEM files
     ${FOLLY_DIR}/Poly.cpp
@@ -181,6 +246,30 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     ${FOLLY_DIR}/detail/TypeList.h
     ${FOLLY_DIR}/poly/Nullable.h
     ${FOLLY_DIR}/poly/Regular.h
+  )
+endif()
+
+set(PCLMUL_FILES
+  ${FOLLY_DIR}/hash/detail/ChecksumDetail.cpp
+  ${FOLLY_DIR}/hash/detail/Crc32CombineDetail.cpp
+  ${FOLLY_DIR}/hash/detail/Crc32cDetail.cpp
+)
+CHECK_CXX_COMPILER_FLAG(-mpclmul COMPILER_HAS_M_PCLMUL)
+if (COMPILER_HAS_M_PCLMUL)
+  message(
+    STATUS
+    "compiler has flag pclmul, setting compile flag for ${PCLMUL_FILES}"
+  )
+  set_source_files_properties(
+    ${PCLMUL_FILES}
+    PROPERTIES
+    COMPILE_OPTIONS
+    -mpclmul
+  )
+else()
+  message(
+    STATUS
+    "compiler does not have flag pclmul, skipping setting compile flags for ${PCLMUL_FILES}"
   )
 endif()
 
@@ -218,14 +307,51 @@ target_compile_definitions(folly_base
     $<TARGET_PROPERTY:folly_deps,INTERFACE_COMPILE_DEFINITIONS>
 )
 
+set(FOLLY_INSTALL_TARGETS folly folly_deps)
+
+option(PYTHON_EXTENSIONS "Build Python Bindings for Folly, requires Cython" OFF)
+if (PYTHON_EXTENSIONS)
+  # Compile folly such that it can be linked in to a shared library
+  # required for linking to python extensions
+  add_library(folly_pic
+    $<TARGET_PROPERTY:folly_base,SOURCES>
+  )
+  apply_folly_compile_options_to_target(folly_pic)
+  target_include_directories(folly_pic
+    PUBLIC
+      $<TARGET_PROPERTY:folly_deps,INTERFACE_INCLUDE_DIRECTORIES>
+  )
+  target_compile_definitions(folly_pic
+    PUBLIC
+      $<TARGET_PROPERTY:folly_deps,INTERFACE_COMPILE_DEFINITIONS>
+  )
+  set_target_properties(folly_pic PROPERTIES POSITION_INDEPENDENT_CODE True)
+  list(APPEND FOLLY_INSTALL_TARGETS folly_pic)
+endif ()
+
 add_library(folly
   $<TARGET_OBJECTS:folly_base>
 )
 apply_folly_compile_options_to_target(folly)
+target_compile_features(folly INTERFACE cxx_generic_lambdas)
 
 target_link_libraries(folly PUBLIC folly_deps)
 
-install(TARGETS folly folly_deps
+# Test utilities exported for use by downstream projects
+add_library(folly_test_util
+  ${FOLLY_DIR}/test/DeterministicSchedule.cpp
+  ${FOLLY_DIR}/test/JsonTestUtil.cpp
+)
+target_link_libraries(folly_test_util
+  PUBLIC
+    ${BOOST_LIBRARIES}
+    folly
+    ${LIBGMOCK_LIBRARIES}
+)
+apply_folly_compile_options_to_target(folly_test_util)
+list(APPEND FOLLY_INSTALL_TARGETS folly_test_util)
+
+install(TARGETS ${FOLLY_INSTALL_TARGETS}
   EXPORT folly
   RUNTIME DESTINATION bin
   LIBRARY DESTINATION ${LIB_INSTALL_DIR}
@@ -313,11 +439,9 @@ if (BUILD_TESTS)
     ${FOLLY_DIR}/test/SingletonTestStructs.cpp
     ${FOLLY_DIR}/test/SocketAddressTestHelper.cpp
     ${FOLLY_DIR}/test/SocketAddressTestHelper.h
+    ${FOLLY_DIR}/container/test/F14TestUtil.h
+    ${FOLLY_DIR}/container/test/TrackingTypes.h
     ${FOLLY_DIR}/experimental/test/CodingTestUtils.cpp
-    ${FOLLY_DIR}/logging/test/ConfigHelpers.cpp
-    ${FOLLY_DIR}/logging/test/ConfigHelpers.h
-    ${FOLLY_DIR}/logging/test/TestLogHandler.cpp
-    ${FOLLY_DIR}/logging/test/TestLogHandler.h
     ${FOLLY_DIR}/futures/test/TestExecutor.cpp
     ${FOLLY_DIR}/futures/test/TestExecutor.h
     ${FOLLY_DIR}/io/async/test/BlockingSocket.h
@@ -337,6 +461,10 @@ if (BUILD_TESTS)
     ${FOLLY_DIR}/io/async/test/TimeUtil.h
     ${FOLLY_DIR}/io/async/test/UndelayedDestruction.h
     ${FOLLY_DIR}/io/async/test/Util.h
+    ${FOLLY_DIR}/logging/test/ConfigHelpers.cpp
+    ${FOLLY_DIR}/logging/test/ConfigHelpers.h
+    ${FOLLY_DIR}/logging/test/TestLogHandler.cpp
+    ${FOLLY_DIR}/logging/test/TestLogHandler.h
   )
   target_compile_definitions(folly_test_support
     PUBLIC
@@ -353,6 +481,7 @@ if (BUILD_TESTS)
       follybenchmark
       folly
       ${LIBGMOCK_LIBRARIES}
+      ${GLOG_LIBRARY}
   )
   apply_folly_compile_options_to_target(folly_test_support)
 
@@ -378,14 +507,18 @@ if (BUILD_TESTS)
       TEST foreach_test SOURCES ForeachTest.cpp
       TEST merge_test SOURCES MergeTest.cpp
       TEST sparse_byte_set_test SOURCES SparseByteSetTest.cpp
+      TEST util_test SOURCES UtilTest.cpp
 
     DIRECTORY concurrency/test/
       TEST atomic_shared_ptr_test SOURCES AtomicSharedPtrTest.cpp
       TEST cache_locality_test SOURCES CacheLocalityTest.cpp
       TEST core_cached_shared_ptr_test SOURCES CoreCachedSharedPtrTest.cpp
-      TEST concurrent_hash_map_test SOURCES ConcurrentHashMapTest.cpp
+      TEST concurrent_hash_map_test WINDOWS_DISABLED
+        SOURCES ConcurrentHashMapTest.cpp
       TEST dynamic_bounded_queue_test WINDOWS_DISABLED
         SOURCES DynamicBoundedQueueTest.cpp
+      TEST priority_unbounded_queue_set_test
+        SOURCES PriorityUnboundedQueueSetTest.cpp
       TEST unbounded_queue_test SOURCES UnboundedQueueTest.cpp
 
     DIRECTORY detail/test/
@@ -404,6 +537,8 @@ if (BUILD_TESTS)
       TEST timed_drivable_executor_test SOURCES TimedDrivableExecutorTest.cpp
 
     DIRECTORY executors/task_queue/test/
+      TEST priority_unbounded_blocking_queue_test
+        SOURCES PriorityUnboundedBlockingQueueTest.cpp
       TEST unbounded_blocking_queue_test SOURCES UnboundedBlockingQueueTest.cpp
 
     DIRECTORY experimental/test/
@@ -430,9 +565,10 @@ if (BUILD_TESTS)
       TEST tuple_ops_test SOURCES TupleOpsTest.cpp
 
     DIRECTORY experimental/io/test/
-      # Depends on libaio
-      #TEST async_io_test SOURCES AsyncIOTest.cpp
       TEST fs_util_test SOURCES FsUtilTest.cpp
+
+    DIRECTORY external/farmhash/test/
+      TEST farmhash_test SOURCES farmhash_test.cpp
 
     DIRECTORY logging/test/
       TEST async_file_writer_test SOURCES AsyncFileWriterTest.cpp
@@ -448,7 +584,6 @@ if (BUILD_TESTS)
       TEST log_message_test SOURCES LogMessageTest.cpp
       TEST log_name_test SOURCES LogNameTest.cpp
       TEST log_stream_test SOURCES LogStreamTest.cpp
-      TEST printf_test SOURCES PrintfTest.cpp
       TEST rate_limiter_test SOURCES RateLimiterTest.cpp
       TEST standard_log_handler_test SOURCES StandardLogHandlerTest.cpp
       TEST xlog_test
@@ -516,6 +651,7 @@ if (BUILD_TESTS)
 
     DIRECTORY hash/test/
       TEST checksum_test SOURCES ChecksumTest.cpp
+      TEST farm_hash_test SOURCES FarmHashTest.cpp
       TEST hash_test WINDOWS_DISABLED
         SOURCES HashTest.cpp
       TEST spooky_hash_v1_test SOURCES SpookyHashV1Test.cpp
@@ -614,6 +750,10 @@ if (BUILD_TESTS)
       TEST call_once_test SOURCES CallOnceTest.cpp
       TEST lifo_sem_test SOURCES LifoSemTests.cpp
       TEST rw_spin_lock_test SOURCES RWSpinLockTest.cpp
+      TEST semaphore_test SOURCES SemaphoreTest.cpp
+
+    DIRECTORY synchronization/detail/test/
+      TEST hardware_test SOURCES HardwareTest.cpp
 
     DIRECTORY system/test/
       TEST memory_mapping_test SOURCES MemoryMappingTest.cpp
@@ -652,6 +792,7 @@ if (BUILD_TESTS)
       TEST exception_test SOURCES ExceptionTest.cpp
       TEST exception_wrapper_test SOURCES ExceptionWrapperTest.cpp
       TEST expected_test SOURCES ExpectedTest.cpp
+      TEST fbstring_test SOURCES FBStringTest.cpp
       TEST fbvector_test SOURCES FBVectorTest.cpp
       TEST file_test SOURCES FileTest.cpp
       # Open-source linux build can't handle running this.
@@ -659,6 +800,7 @@ if (BUILD_TESTS)
       TEST file_util_test HANGING
         SOURCES FileUtilTest.cpp
       TEST fingerprint_test SOURCES FingerprintTest.cpp
+      TEST fixed_string_test SOURCES FixedStringTest.cpp
       TEST format_other_test SOURCES FormatOtherTest.cpp
       TEST format_test SOURCES FormatTest.cpp
       TEST function_test BROKEN
@@ -709,6 +851,7 @@ if (BUILD_TESTS)
         SOURCES ProducerConsumerQueueTest.cpp
       TEST random_test SOURCES RandomTest.cpp
       TEST range_test SOURCES RangeTest.cpp
+      TEST replaceable_test SOURCES ReplaceableTest.cpp
       TEST scope_guard_test SOURCES ScopeGuardTest.cpp
       # Heavily dependent on drand and srand48
       #TEST shared_mutex_test SOURCES SharedMutexTest.cpp
@@ -731,6 +874,21 @@ if (BUILD_TESTS)
       TEST uri_test SOURCES UriTest.cpp
       TEST varint_test SOURCES VarintTest.cpp
   )
+
+  if (${LIBSODIUM_FOUND})
+    folly_define_tests(
+      DIRECTORY experimental/crypto/test/
+        TEST blake2xb_test SOURCES Blake2xbTest.cpp
+        TEST lt_hash_test SOURCES LtHashTest.cpp
+    )
+  endif()
+
+  if (${LIBAIO_FOUND})
+    folly_define_tests(
+      DIRECTORY experimental/io/test/
+        TEST async_io_test SOURCES AsyncIOTest.cpp
+    )
+  endif()
 
   get_target_property(pic folly POSITION_INDEPENDENT_CODE)
   if (pic)

@@ -29,7 +29,7 @@
  */
 #if (defined(USE_JEMALLOC) || defined(FOLLY_USE_JEMALLOC)) && !FOLLY_SANITIZE
 // We have JEMalloc, so use it.
-#include <jemalloc/jemalloc.h>
+#include <jemalloc/jemalloc.h> // @manual
 #else
 #ifndef MALLOCX_LG_ALIGN
 #define MALLOCX_LG_ALIGN(la) (la)
@@ -139,7 +139,11 @@ namespace folly {
 /**
  * Determine if we are using jemalloc or not.
  */
-#if defined(USE_JEMALLOC) && !FOLLY_SANITIZE
+#if defined(FOLLY_ASSUME_NO_JEMALLOC)
+  inline bool usingJEMalloc() noexcept {
+    return false;
+  }
+#elif defined(USE_JEMALLOC) && !FOLLY_SANITIZE
   inline bool usingJEMalloc() noexcept {
     return true;
   }

@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 5
-#pragma message "Folly.Poly requires gcc-5 or greater"
-#else
+
 #include <folly/Poly.h>
 
 #include <folly/Conv.h>
@@ -835,4 +833,41 @@ TEST(Poly, PolyRefAsArg) {
   // should not throw:
   frob.frobnicate(folly::Poly<folly::poly::IRegular&>(x));
 }
-#endif
+
+namespace {
+struct ICat {
+  template <class Base>
+  struct Interface : Base {
+    void pet() {
+      folly::poly_call<0>(*this);
+    }
+
+    int meow() const {
+      return folly::poly_call<1>(*this);
+    }
+  };
+
+  template <class T>
+  using Members = FOLLY_POLY_MEMBERS(&T::pet, &T::meow);
+};
+
+struct cat {
+  void pet() noexcept {
+    ++pet_count;
+  }
+  int meow() const noexcept {
+    return pet_count;
+  }
+  int pet_count = 0;
+};
+} // namespace
+
+TEST(Poly, NoexceptMembers) {
+  cat c{};
+
+  folly::Poly<ICat&> ref = c;
+  ref->pet();
+
+  folly::Poly<ICat const&> cref = ref;
+  EXPECT_EQ(cref->meow(), 1);
+}

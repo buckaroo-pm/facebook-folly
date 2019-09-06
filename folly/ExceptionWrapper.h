@@ -62,16 +62,15 @@ template <template <class> class T, class... As>
 using AllOf = StrictConjunction<T<As>...>;
 
 template <bool If, class T>
-using AddConstIf = _t<std::conditional<If, const T, T>>;
+using AddConstIf = std::conditional_t<If, const T, T>;
 
 template <class Fn, class A>
-FOLLY_ALWAYS_INLINE FOLLY_ATTR_VISIBILITY_HIDDEN auto fold(Fn&&, A&& a) {
+FOLLY_ERASE auto fold(Fn&&, A&& a) {
   return static_cast<A&&>(a);
 }
 
 template <class Fn, class A, class B, class... Bs>
-FOLLY_ALWAYS_INLINE FOLLY_ATTR_VISIBILITY_HIDDEN auto
-fold(Fn&& fn, A&& a, B&& b, Bs&&... bs) {
+FOLLY_ERASE auto fold(Fn&& fn, A&& a, B&& b, Bs&&... bs) {
   return fold(
       // This looks like a use of fn after a move of fn, but in reality, this is
       // just a cast and not a move. That's because regardless of which fold
@@ -206,12 +205,12 @@ class exception_wrapper final {
   static VTable const uninit_;
 
   template <class Ex>
-  using IsStdException = std::is_base_of<std::exception, _t<std::decay<Ex>>>;
+  using IsStdException = std::is_base_of<std::exception, std::decay_t<Ex>>;
   template <bool B, class T>
   using AddConstIf = exception_wrapper_detail::AddConstIf<B, T>;
   template <class CatchFn>
   using IsCatchAll =
-      std::is_same<arg_type<_t<std::decay<CatchFn>>>, AnyException>;
+      std::is_same<arg_type<std::decay_t<CatchFn>>, AnyException>;
 
   struct Unknown {};
 
@@ -221,7 +220,7 @@ class exception_wrapper final {
   // and runtime_error can be safely stored internally.
   struct Buffer {
     using Storage =
-        _t<std::aligned_storage<2 * sizeof(void*), alignof(std::exception)>>;
+        std::aligned_storage_t<2 * sizeof(void*), alignof(std::exception)>;
     Storage buff_;
 
     Buffer() : buff_{} {}
@@ -239,16 +238,16 @@ class exception_wrapper final {
   struct OnHeapTag {};
 
   template <class T>
-  using PlacementOf = _t<std::conditional<
+  using PlacementOf = std::conditional_t<
       !IsStdException<T>::value,
       ThrownTag,
-      _t<std::conditional<
+      std::conditional_t<
           sizeof(T) <= sizeof(Buffer::Storage) &&
               alignof(T) <= alignof(Buffer::Storage) &&
               noexcept(T(std::declval<T&&>())) &&
               noexcept(T(std::declval<T const&>())),
           InSituTag,
-          OnHeapTag>>>>;
+          OnHeapTag>>;
 
   static std::exception const* as_exception_or_null_(std::exception const& ex);
   static std::exception const* as_exception_or_null_(AnyException);
@@ -429,7 +428,7 @@ class exception_wrapper final {
   //!     converted to an `exception_wrapper`.
   template <
       class Ex,
-      class Ex_ = _t<std::decay<Ex>>,
+      class Ex_ = std::decay_t<Ex>,
       FOLLY_REQUIRES(
           Conjunction<IsStdException<Ex_>, IsRegularExceptionType<Ex_>>::value)>
   /* implicit */ exception_wrapper(Ex&& ex);
@@ -443,7 +442,7 @@ class exception_wrapper final {
   //!     `folly::in_place` as the first parameter.
   template <
       class Ex,
-      class Ex_ = _t<std::decay<Ex>>,
+      class Ex_ = std::decay_t<Ex>,
       FOLLY_REQUIRES(IsRegularExceptionType<Ex_>::value)>
   exception_wrapper(in_place_t, Ex&& ex);
 

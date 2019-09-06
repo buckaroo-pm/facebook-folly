@@ -19,7 +19,7 @@
 /**
  * F14NodeMap, F14ValueMap, and F14VectorMap
  *
- * F14FastMap conditionally inherits from F14ValueMap or F14VectorMap
+ * F14FastMap conditionally works like F14ValueMap or F14VectorMap
  *
  * See F14.md
  *
@@ -30,164 +30,15 @@
 #include <stdexcept>
 
 #include <folly/Traits.h>
-#include <folly/functional/ApplyTuple.h>
 #include <folly/lang/Exception.h>
 #include <folly/lang/SafeAssert.h>
 
 #include <folly/container/F14Map-fwd.h>
 #include <folly/container/detail/F14Policy.h>
 #include <folly/container/detail/F14Table.h>
+#include <folly/container/detail/Util.h>
 
-#if !FOLLY_F14_VECTOR_INTRINSICS_AVAILABLE
-
-//////// Compatibility for unsupported platforms (not x86_64 and not aarch64)
-
-#include <string>
-#include <unordered_map>
-
-namespace folly {
-
-namespace f14 {
-namespace detail {
-template <typename K, typename M, typename H, typename E, typename A>
-class F14BasicMap : public std::unordered_map<K, M, H, E, A> {
-  using Super = std::unordered_map<K, M, H, E, A>;
-
- public:
-  using typename Super::pointer;
-  using typename Super::value_type;
-
-  F14BasicMap() = default;
-
-  using Super::Super;
-
-  //// PUBLIC - F14 Extensions
-
-  // exact for libstdc++, approximate for others
-  std::size_t getAllocatedMemorySize() const {
-    std::size_t rv = 0;
-    visitAllocationClasses(
-        [&](std::size_t bytes, std::size_t n) { rv += bytes * n; });
-    return rv;
-  }
-
-  // exact for libstdc++, approximate for others
-  template <typename V>
-  void visitAllocationClasses(V&& visitor) const {
-    auto bc = this->bucket_count();
-    if (bc > 1) {
-      visitor(bc * sizeof(pointer), 1);
-    }
-    if (this->size() > 0) {
-      visitor(sizeof(StdNodeReplica<K, value_type, H>), this->size());
-    }
-  }
-
-  template <typename V>
-  void visitContiguousRanges(V&& visitor) const {
-    for (value_type const& entry : *this) {
-      value_type const* b = std::addressof(entry);
-      visitor(b, b + 1);
-    }
-  }
-};
-} // namespace detail
-} // namespace f14
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hasher,
-    typename KeyEqual,
-    typename Alloc>
-class F14ValueMap
-    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
-  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
-
- public:
-  using typename Super::value_type;
-
-  F14ValueMap() = default;
-
-  using Super::Super;
-
-  F14ValueMap& operator=(std::initializer_list<value_type> ilist) {
-    Super::operator=(ilist);
-    return *this;
-  }
-};
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hasher,
-    typename KeyEqual,
-    typename Alloc>
-class F14NodeMap
-    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
-  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
-
- public:
-  using typename Super::value_type;
-
-  F14NodeMap() = default;
-
-  using Super::Super;
-
-  F14NodeMap& operator=(std::initializer_list<value_type> ilist) {
-    Super::operator=(ilist);
-    return *this;
-  }
-};
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hasher,
-    typename KeyEqual,
-    typename Alloc>
-class F14VectorMap
-    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
-  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
-
- public:
-  using typename Super::value_type;
-
-  F14VectorMap() = default;
-
-  using Super::Super;
-
-  F14VectorMap& operator=(std::initializer_list<value_type> ilist) {
-    Super::operator=(ilist);
-    return *this;
-  }
-};
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hasher,
-    typename KeyEqual,
-    typename Alloc>
-class F14FastMap
-    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
-  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
-
- public:
-  using typename Super::value_type;
-
-  F14FastMap() = default;
-
-  using Super::Super;
-
-  F14FastMap& operator=(std::initializer_list<value_type> ilist) {
-    Super::operator=(ilist);
-    return *this;
-  }
-};
-} // namespace folly
-
-#else // FOLLY_F14_VECTOR_INTRINSICS_AVAILABLE
+#if FOLLY_F14_VECTOR_INTRINSICS_AVAILABLE
 
 //////// Common case for supported platforms
 
@@ -553,73 +404,20 @@ class F14BasicMap {
   }
 
  private:
-  std::pair<ItemIter, bool> emplaceItem() {
-    // rare but valid
-    return table_.tryEmplaceValue(key_type{});
-  }
-
-  template <typename U1, typename U2>
-  std::pair<ItemIter, bool> emplaceItem(U1&& x, U2&& y) {
-    using K = KeyTypeForEmplace<key_type, hasher, key_equal, U1>;
-    K key(std::forward<U1>(x));
-
-    // TODO(T31574848): piecewise_construct is to work around libstdc++ versions
-    // (e.g., GCC < 6) with no implementation of N4387 ("perfect initialization"
-    // for pairs and tuples).  Otherwise we could just pass key, forwarded key,
-    // and forwarded y to tryEmplaceValue.
-    return table_.tryEmplaceValue(
-        key,
-        std::piecewise_construct,
-        std::forward_as_tuple(std::forward<K>(key)),
-        std::forward_as_tuple(std::forward<U2>(y)));
-  }
-
-  template <typename U1, typename U2>
-  std::pair<ItemIter, bool> emplaceItem(std::pair<U1, U2> const& p) {
-    return emplaceItem(p.first, p.second);
-  }
-
-  template <typename U1, typename U2>
-  std::pair<ItemIter, bool> emplaceItem(std::pair<U1, U2>&& p) {
-    return emplaceItem(std::move(p.first), std::move(p.second));
-  }
-
-  template <typename Arg1, typename... Args2>
-  std::pair<ItemIter, bool> emplaceItem(
-      std::piecewise_construct_t,
-      std::tuple<Arg1>&& first_args,
-      std::tuple<Args2...>&& second_args) {
-    using K = KeyTypeForEmplace<key_type, hasher, key_equal, Arg1>;
-    K key(std::get<0>(std::move(first_args)));
-
-    // Args2&&... holds only references even if the caller gave us a
-    // tuple that directly contains values.
-    return table_.tryEmplaceValue(
-        key,
-        std::piecewise_construct,
-        std::forward_as_tuple(std::forward<K>(key)),
-        std::tuple<Args2&&...>(std::move(second_args)));
-  }
-
-  template <typename... Args1, typename... Args2>
-  std::enable_if_t<sizeof...(Args1) != 1, std::pair<ItemIter, bool>>
-  emplaceItem(
-      std::piecewise_construct_t,
-      std::tuple<Args1...>&& first_args,
-      std::tuple<Args2...>&& second_args) {
-    auto key = make_from_tuple<key_type>(
-        std::tuple<Args1&&...>(std::move(first_args)));
-    return table_.tryEmplaceValue(
-        key,
-        std::piecewise_construct,
-        std::forward_as_tuple(std::move(key)),
-        std::tuple<Args2&&...>(std::move(second_args)));
-  }
+  template <typename Arg>
+  using UsableAsKey =
+      EligibleForHeterogeneousFind<key_type, hasher, key_equal, Arg>;
 
  public:
   template <typename... Args>
   std::pair<iterator, bool> emplace(Args&&... args) {
-    auto rv = emplaceItem(std::forward<Args>(args)...);
+    auto rv = folly::detail::callWithExtractedKey<key_type, UsableAsKey>(
+        table_.alloc(),
+        [&](auto&&... inner) {
+          return table_.tryEmplaceValue(
+              std::forward<decltype(inner)>(inner)...);
+        },
+        std::forward<Args>(args)...);
     return std::make_pair(table_.makeIter(rv.first), rv.second);
   }
 
@@ -688,7 +486,7 @@ class F14BasicMap {
 
   // This form avoids ambiguity when key_type has a templated constructor
   // that accepts const_iterator
-  iterator erase(iterator pos) {
+  FOLLY_ALWAYS_INLINE iterator erase(iterator pos) {
     auto itemPos = table_.unwrapIter(pos);
     table_.eraseIter(itemPos);
     itemPos.advanceLikelyDead();
@@ -747,14 +545,14 @@ class F14BasicMap {
     return try_emplace(std::forward<K>(key)).first->second;
   }
 
-  FOLLY_ALWAYS_INLINE std::size_t count(key_type const& key) const {
-    return table_.find(key).atEnd() ? 0 : 1;
+  FOLLY_ALWAYS_INLINE size_type count(key_type const& key) const {
+    return contains(key) ? 1 : 0;
   }
 
   template <typename K>
-  FOLLY_ALWAYS_INLINE EnableHeterogeneousFind<K, std::size_t> count(
+  FOLLY_ALWAYS_INLINE EnableHeterogeneousFind<K, size_type> count(
       K const& key) const {
-    return table_.find(key).atEnd() ? 0 : 1;
+    return contains(key) ? 1 : 0;
   }
 
   // prehash(key) does the work of evaluating hash_function()(key)
@@ -821,6 +619,29 @@ class F14BasicMap {
       F14HashToken const& token,
       K const& key) const {
     return table_.makeConstIter(table_.find(token, key));
+  }
+
+  FOLLY_ALWAYS_INLINE bool contains(key_type const& key) const {
+    return !table_.find(key).atEnd();
+  }
+
+  template <typename K>
+  FOLLY_ALWAYS_INLINE EnableHeterogeneousFind<K, bool> contains(
+      K const& key) const {
+    return !table_.find(key).atEnd();
+  }
+
+  FOLLY_ALWAYS_INLINE bool contains(
+      F14HashToken const& token,
+      key_type const& key) const {
+    return !table_.find(token, key).atEnd();
+  }
+
+  template <typename K>
+  FOLLY_ALWAYS_INLINE EnableHeterogeneousFind<K, bool> contains(
+      F14HashToken const& token,
+      K const& key) const {
+    return !table_.find(token, key).atEnd();
   }
 
   std::pair<iterator, iterator> equal_range(key_type const& key) {
@@ -891,6 +712,17 @@ class F14BasicMap {
 
   //// PUBLIC - F14 Extensions
 
+  // containsEqualValue returns true iff there is an element in the map
+  // that compares equal to value using operator==.  It is undefined
+  // behavior to call this function if operator== on key_type can ever
+  // return true when the same keys passed to key_eq() would return false
+  // (the opposite is allowed).
+  bool containsEqualValue(value_type const& value) const {
+    auto it = table_.findMatching(
+        value.first, [&](auto& key) { return value.first == key; });
+    return !it.atEnd() && value.second == table_.valueAtItem(it.citem()).second;
+  }
+
   // Get memory footprint, not including sizeof(*this).
   std::size_t getAllocatedMemorySize() const {
     return table_.getAllocatedMemorySize();
@@ -944,33 +776,6 @@ class F14BasicMap {
  protected:
   F14Table<Policy> table_;
 };
-
-template <typename M>
-bool mapsEqual(M const& lhs, M const& rhs) {
-  if (lhs.size() != rhs.size()) {
-    return false;
-  }
-  for (auto& kv : lhs) {
-    auto iter = rhs.find(kv.first);
-    if (iter == rhs.end()) {
-      return false;
-    }
-    if (std::is_same<
-            typename M::key_equal,
-            std::equal_to<typename M::key_type>>::value) {
-      // find already checked key, just check value
-      if (!(kv.second == iter->second)) {
-        return false;
-      }
-    } else {
-      // spec says we compare key with == as well as with key_eq()
-      if (!(kv == *iter)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
 } // namespace detail
 } // namespace f14
 
@@ -1021,20 +826,6 @@ class F14ValueMap
     this->table_.visitContiguousItemRanges(visitor);
   }
 };
-
-template <typename K, typename M, typename H, typename E, typename A>
-bool operator==(
-    F14ValueMap<K, M, H, E, A> const& lhs,
-    F14ValueMap<K, M, H, E, A> const& rhs) {
-  return mapsEqual(lhs, rhs);
-}
-
-template <typename K, typename M, typename H, typename E, typename A>
-bool operator!=(
-    F14ValueMap<K, M, H, E, A> const& lhs,
-    F14ValueMap<K, M, H, E, A> const& rhs) {
-  return !(lhs == rhs);
-}
 
 template <
     typename Key,
@@ -1088,20 +879,6 @@ class F14NodeMap
 
   // TODO extract and node_handle insert
 };
-
-template <typename K, typename M, typename H, typename E, typename A>
-bool operator==(
-    F14NodeMap<K, M, H, E, A> const& lhs,
-    F14NodeMap<K, M, H, E, A> const& rhs) {
-  return mapsEqual(lhs, rhs);
-}
-
-template <typename K, typename M, typename H, typename E, typename A>
-bool operator!=(
-    F14NodeMap<K, M, H, E, A> const& lhs,
-    F14NodeMap<K, M, H, E, A> const& rhs) {
-  return !(lhs == rhs);
-}
 
 namespace f14 {
 namespace detail {
@@ -1362,20 +1139,6 @@ class F14VectorMap : public f14::detail::F14VectorMapImpl<
   }
 };
 
-template <typename K, typename M, typename H, typename E, typename A>
-bool operator==(
-    F14VectorMap<K, M, H, E, A> const& lhs,
-    F14VectorMap<K, M, H, E, A> const& rhs) {
-  return mapsEqual(lhs, rhs);
-}
-
-template <typename K, typename M, typename H, typename E, typename A>
-bool operator!=(
-    F14VectorMap<K, M, H, E, A> const& lhs,
-    F14VectorMap<K, M, H, E, A> const& rhs) {
-  return !(lhs == rhs);
-}
-
 template <
     typename Key,
     typename Mapped,
@@ -1419,6 +1182,228 @@ class F14FastMap : public std::conditional_t<
     this->table_.swap(rhs.table_);
   }
 };
+} // namespace folly
+
+#else // !if FOLLY_F14_VECTOR_INTRINSICS_AVAILABLE
+
+//////// Compatibility for unsupported platforms (not x86_64 and not aarch64)
+
+#include <string>
+#include <unordered_map>
+
+namespace folly {
+
+namespace f14 {
+namespace detail {
+template <typename K, typename M, typename H, typename E, typename A>
+class F14BasicMap : public std::unordered_map<K, M, H, E, A> {
+  using Super = std::unordered_map<K, M, H, E, A>;
+
+ public:
+  using typename Super::pointer;
+  using typename Super::value_type;
+
+  F14BasicMap() = default;
+
+  using Super::Super;
+
+  //// PUBLIC - F14 Extensions
+
+  bool containsEqualValue(value_type const& value) const {
+    auto slot = this->bucket(value.first);
+    auto e = this->end(slot);
+    for (auto b = this->begin(slot); b != e; ++b) {
+      if (b->first == value.first) {
+        return b->second == value.second;
+      }
+    }
+    return false;
+  }
+
+  // exact for libstdc++, approximate for others
+  std::size_t getAllocatedMemorySize() const {
+    std::size_t rv = 0;
+    visitAllocationClasses(
+        [&](std::size_t bytes, std::size_t n) { rv += bytes * n; });
+    return rv;
+  }
+
+  // exact for libstdc++, approximate for others
+  template <typename V>
+  void visitAllocationClasses(V&& visitor) const {
+    auto bc = this->bucket_count();
+    if (bc > 1) {
+      visitor(bc * sizeof(pointer), 1);
+    }
+    if (this->size() > 0) {
+      visitor(sizeof(StdNodeReplica<K, value_type, H>), this->size());
+    }
+  }
+
+  template <typename V>
+  void visitContiguousRanges(V&& visitor) const {
+    for (value_type const& entry : *this) {
+      value_type const* b = std::addressof(entry);
+      visitor(b, b + 1);
+    }
+  }
+};
+} // namespace detail
+} // namespace f14
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Hasher,
+    typename KeyEqual,
+    typename Alloc>
+class F14ValueMap
+    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
+  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
+
+ public:
+  using typename Super::value_type;
+
+  F14ValueMap() = default;
+
+  using Super::Super;
+
+  F14ValueMap& operator=(std::initializer_list<value_type> ilist) {
+    Super::operator=(ilist);
+    return *this;
+  }
+};
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Hasher,
+    typename KeyEqual,
+    typename Alloc>
+class F14NodeMap
+    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
+  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
+
+ public:
+  using typename Super::value_type;
+
+  F14NodeMap() = default;
+
+  using Super::Super;
+
+  F14NodeMap& operator=(std::initializer_list<value_type> ilist) {
+    Super::operator=(ilist);
+    return *this;
+  }
+};
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Hasher,
+    typename KeyEqual,
+    typename Alloc>
+class F14VectorMap
+    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
+  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
+
+ public:
+  using typename Super::value_type;
+
+  F14VectorMap() = default;
+
+  using Super::Super;
+
+  F14VectorMap& operator=(std::initializer_list<value_type> ilist) {
+    Super::operator=(ilist);
+    return *this;
+  }
+};
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Hasher,
+    typename KeyEqual,
+    typename Alloc>
+class F14FastMap
+    : public f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc> {
+  using Super = f14::detail::F14BasicMap<Key, Mapped, Hasher, KeyEqual, Alloc>;
+
+ public:
+  using typename Super::value_type;
+
+  F14FastMap() = default;
+
+  using Super::Super;
+
+  F14FastMap& operator=(std::initializer_list<value_type> ilist) {
+    Super::operator=(ilist);
+    return *this;
+  }
+};
+} // namespace folly
+#endif // if FOLLY_F14_VECTOR_INTRINSICS_AVAILABLE else
+
+namespace folly {
+namespace f14 {
+namespace detail {
+template <typename M>
+bool mapsEqual(M const& lhs, M const& rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (auto& kv : lhs) {
+    if (!rhs.containsEqualValue(kv)) {
+      return false;
+    }
+  }
+  return true;
+}
+} // namespace detail
+} // namespace f14
+
+template <typename K, typename M, typename H, typename E, typename A>
+bool operator==(
+    F14ValueMap<K, M, H, E, A> const& lhs,
+    F14ValueMap<K, M, H, E, A> const& rhs) {
+  return mapsEqual(lhs, rhs);
+}
+
+template <typename K, typename M, typename H, typename E, typename A>
+bool operator!=(
+    F14ValueMap<K, M, H, E, A> const& lhs,
+    F14ValueMap<K, M, H, E, A> const& rhs) {
+  return !(lhs == rhs);
+}
+
+template <typename K, typename M, typename H, typename E, typename A>
+bool operator==(
+    F14NodeMap<K, M, H, E, A> const& lhs,
+    F14NodeMap<K, M, H, E, A> const& rhs) {
+  return mapsEqual(lhs, rhs);
+}
+
+template <typename K, typename M, typename H, typename E, typename A>
+bool operator!=(
+    F14NodeMap<K, M, H, E, A> const& lhs,
+    F14NodeMap<K, M, H, E, A> const& rhs) {
+  return !(lhs == rhs);
+}
+
+template <typename K, typename M, typename H, typename E, typename A>
+bool operator==(
+    F14VectorMap<K, M, H, E, A> const& lhs,
+    F14VectorMap<K, M, H, E, A> const& rhs) {
+  return mapsEqual(lhs, rhs);
+}
+
+template <typename K, typename M, typename H, typename E, typename A>
+bool operator!=(
+    F14VectorMap<K, M, H, E, A> const& lhs,
+    F14VectorMap<K, M, H, E, A> const& rhs) {
+  return !(lhs == rhs);
+}
 
 template <typename K, typename M, typename H, typename E, typename A>
 bool operator==(
@@ -1433,11 +1418,6 @@ bool operator!=(
     F14FastMap<K, M, H, E, A> const& rhs) {
   return !(lhs == rhs);
 }
-} // namespace folly
-
-#endif // FOLLY_F14_VECTOR_INTRINSICS_AVAILABLE
-
-namespace folly {
 
 template <typename K, typename M, typename H, typename E, typename A>
 void swap(
@@ -1465,6 +1445,50 @@ void swap(
     F14FastMap<K, M, H, E, A>& lhs,
     F14FastMap<K, M, H, E, A>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
   lhs.swap(rhs);
+}
+
+template <
+    typename K,
+    typename M,
+    typename H,
+    typename E,
+    typename A,
+    typename Pred>
+void erase_if(F14ValueMap<K, M, H, E, A>& c, Pred pred) {
+  f14::detail::erase_if_impl(c, pred);
+}
+
+template <
+    typename K,
+    typename M,
+    typename H,
+    typename E,
+    typename A,
+    typename Pred>
+void erase_if(F14NodeMap<K, M, H, E, A>& c, Pred pred) {
+  f14::detail::erase_if_impl(c, pred);
+}
+
+template <
+    typename K,
+    typename M,
+    typename H,
+    typename E,
+    typename A,
+    typename Pred>
+void erase_if(F14VectorMap<K, M, H, E, A>& c, Pred pred) {
+  f14::detail::erase_if_impl(c, pred);
+}
+
+template <
+    typename K,
+    typename M,
+    typename H,
+    typename E,
+    typename A,
+    typename Pred>
+void erase_if(F14FastMap<K, M, H, E, A>& c, Pred pred) {
+  f14::detail::erase_if_impl(c, pred);
 }
 
 } // namespace folly

@@ -112,32 +112,6 @@ inline size_t qfind_first_of(
  */
 namespace detail {
 
-/**
- * For random-access iterators, the value before is simply i[-1].
- */
-template <class Iter>
-typename std::enable_if<
-    std::is_same<
-        typename std::iterator_traits<Iter>::iterator_category,
-        std::random_access_iterator_tag>::value,
-    typename std::iterator_traits<Iter>::reference>::type
-value_before(Iter i) {
-  return i[-1];
-}
-
-/**
- * For all other iterators, we need to use the decrement operator.
- */
-template <class Iter>
-typename std::enable_if<
-    !std::is_same<
-        typename std::iterator_traits<Iter>::iterator_category,
-        std::random_access_iterator_tag>::value,
-    typename std::iterator_traits<Iter>::reference>::type
-value_before(Iter i) {
-  return *--i;
-}
-
 /*
  * Use IsCharPointer<T>::type to enable const char* or char*.
  * Use IsCharPointer<T>::const_type to enable only const char*.
@@ -214,9 +188,7 @@ class Range {
   // Works only for random-access iterators
   constexpr Range(Iter start, size_t size) : b_(start), e_(start + size) {}
 
-#if !__clang__ || __CLANG_PREREQ(3, 7) // Clang 3.6 crashes on this line
   /* implicit */ Range(std::nullptr_t) = delete;
-#endif
 
   constexpr /* implicit */ Range(Iter str)
       : b_(str), e_(str + constexpr_strlen(str)) {
@@ -447,12 +419,9 @@ class Range {
   }
 
   constexpr size_type size() const {
-    // It would be nice to assert(b_ <= e_) here.  This can be achieved even
-    // in a C++11 compatible constexpr function:
-    // http://ericniebler.com/2014/09/27/assert-and-constexpr-in-cxx11/
-    // Unfortunately current gcc versions have a bug causing it to reject
-    // this check in a constexpr function:
-    // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=71448
+#if __clang__ || !__GNUC__ || __GNUC__ >= 7
+    assert(b_ <= e_);
+#endif
     return size_type(e_ - b_);
   }
   constexpr size_type walk_size() const {
@@ -485,7 +454,7 @@ class Range {
   }
   value_type& back() {
     assert(b_ < e_);
-    return detail::value_before(e_);
+    return *std::prev(e_);
   }
   const value_type& front() const {
     assert(b_ < e_);
@@ -493,7 +462,7 @@ class Range {
   }
   const value_type& back() const {
     assert(b_ < e_);
-    return detail::value_before(e_);
+    return *std::prev(e_);
   }
 
  private:
@@ -1265,8 +1234,9 @@ struct ComparableAsStringPiece {
  * operator== through conversion for Range<const char*>
  */
 template <class T, class U>
-_t<std::enable_if<detail::ComparableAsStringPiece<T, U>::value, bool>>
-operator==(const T& lhs, const U& rhs) {
+std::enable_if_t<detail::ComparableAsStringPiece<T, U>::value, bool> operator==(
+    const T& lhs,
+    const U& rhs) {
   return StringPiece(lhs) == StringPiece(rhs);
 }
 
@@ -1274,8 +1244,9 @@ operator==(const T& lhs, const U& rhs) {
  * operator!= through conversion for Range<const char*>
  */
 template <class T, class U>
-_t<std::enable_if<detail::ComparableAsStringPiece<T, U>::value, bool>>
-operator!=(const T& lhs, const U& rhs) {
+std::enable_if_t<detail::ComparableAsStringPiece<T, U>::value, bool> operator!=(
+    const T& lhs,
+    const U& rhs) {
   return StringPiece(lhs) != StringPiece(rhs);
 }
 
@@ -1283,8 +1254,9 @@ operator!=(const T& lhs, const U& rhs) {
  * operator< through conversion for Range<const char*>
  */
 template <class T, class U>
-_t<std::enable_if<detail::ComparableAsStringPiece<T, U>::value, bool>>
-operator<(const T& lhs, const U& rhs) {
+std::enable_if_t<detail::ComparableAsStringPiece<T, U>::value, bool> operator<(
+    const T& lhs,
+    const U& rhs) {
   return StringPiece(lhs) < StringPiece(rhs);
 }
 
@@ -1292,8 +1264,9 @@ operator<(const T& lhs, const U& rhs) {
  * operator> through conversion for Range<const char*>
  */
 template <class T, class U>
-_t<std::enable_if<detail::ComparableAsStringPiece<T, U>::value, bool>>
-operator>(const T& lhs, const U& rhs) {
+std::enable_if_t<detail::ComparableAsStringPiece<T, U>::value, bool> operator>(
+    const T& lhs,
+    const U& rhs) {
   return StringPiece(lhs) > StringPiece(rhs);
 }
 
@@ -1301,8 +1274,9 @@ operator>(const T& lhs, const U& rhs) {
  * operator< through conversion for Range<const char*>
  */
 template <class T, class U>
-_t<std::enable_if<detail::ComparableAsStringPiece<T, U>::value, bool>>
-operator<=(const T& lhs, const U& rhs) {
+std::enable_if_t<detail::ComparableAsStringPiece<T, U>::value, bool> operator<=(
+    const T& lhs,
+    const U& rhs) {
   return StringPiece(lhs) <= StringPiece(rhs);
 }
 
@@ -1310,8 +1284,9 @@ operator<=(const T& lhs, const U& rhs) {
  * operator> through conversion for Range<const char*>
  */
 template <class T, class U>
-_t<std::enable_if<detail::ComparableAsStringPiece<T, U>::value, bool>>
-operator>=(const T& lhs, const U& rhs) {
+std::enable_if_t<detail::ComparableAsStringPiece<T, U>::value, bool> operator>=(
+    const T& lhs,
+    const U& rhs) {
   return StringPiece(lhs) >= StringPiece(rhs);
 }
 

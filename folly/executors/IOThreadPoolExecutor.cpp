@@ -108,10 +108,7 @@ void IOThreadPoolExecutor::add(
   };
 
   ioThread->pendingTasks++;
-  if (!ioThread->eventBase->runInEventBaseThread(std::move(wrappedFunc))) {
-    ioThread->pendingTasks--;
-    throw std::runtime_error("Unable to run func in event base thread");
-  }
+  ioThread->eventBase->runInEventBaseThread(std::move(wrappedFunc));
 }
 
 std::shared_ptr<IOThreadPoolExecutor::IOThread>
@@ -222,7 +219,7 @@ void IOThreadPoolExecutor::stopThreads(size_t n) {
 }
 
 // threadListLock_ is readlocked
-size_t IOThreadPoolExecutor::getPendingTaskCountImpl() {
+size_t IOThreadPoolExecutor::getPendingTaskCountImpl() const {
   size_t count = 0;
   for (const auto& thread : threadList_.get()) {
     auto ioThread = std::static_pointer_cast<IOThread>(thread);

@@ -37,6 +37,12 @@
 #include <folly/lang/Exception.h>
 #include <folly/system/ThreadId.h>
 
+#if !FOLLY_MOBILE && defined(FOLLY_TLS)
+#define FOLLY_CL_USE_FOLLY_TLS 1
+#else
+#undef FOLLY_CL_USE_FOLLY_TLS
+#endif
+
 namespace folly {
 
 // This file contains several classes that might be useful if you are
@@ -111,6 +117,18 @@ struct CacheLocality {
   /// Throws an exception if no cache information can be loaded.
   static CacheLocality readFromSysfs();
 
+  /// readFromProcCpuinfo(), except input is taken from memory rather
+  /// than the file system.
+  static CacheLocality readFromProcCpuinfoLines(
+      std::vector<std::string> const& lines);
+
+  /// Returns an estimate of the CacheLocality information by reading
+  /// /proc/cpuinfo.  This isn't as accurate as readFromSysfs(), but
+  /// is a lot faster because the info isn't scattered across
+  /// hundreds of files.  Throws an exception if no cache information
+  /// can be loaded.
+  static CacheLocality readFromProcCpuinfo();
+
   /// Returns a usable (but probably not reflective of reality)
   /// CacheLocality structure with the specified number of cpus and a
   /// single cache level that associates one cpu per cache.
@@ -129,7 +147,7 @@ struct Getcpu {
   static Func resolveVdsoFunc();
 };
 
-#ifdef FOLLY_TLS
+#ifdef FOLLY_CL_USE_FOLLY_TLS
 template <template <typename> class Atom>
 struct SequentialThreadId {
   /// Returns the thread id assigned to the current thread
@@ -184,7 +202,7 @@ struct FallbackGetcpu {
   }
 };
 
-#ifdef FOLLY_TLS
+#ifdef FOLLY_CL_USE_FOLLY_TLS
 typedef FallbackGetcpu<SequentialThreadId<std::atomic>> FallbackGetcpuType;
 #else
 typedef FallbackGetcpu<HashingThreadId> FallbackGetcpuType;
@@ -239,7 +257,7 @@ struct AccessSpreader {
                               [cpu % kMaxCpus];
   }
 
-#ifdef FOLLY_TLS
+#ifdef FOLLY_CL_USE_FOLLY_TLS
   /// Returns the stripe associated with the current CPU.  The returned
   /// value will be < numStripes.
   /// This function caches the current cpu in a thread-local variable for a
@@ -305,7 +323,7 @@ struct AccessSpreader {
     unsigned cachedCpuUses_{0};
   };
 
-#ifdef FOLLY_TLS
+#ifdef FOLLY_CL_USE_FOLLY_TLS
   static FOLLY_TLS CpuCache cpuCache;
 #endif
 
@@ -373,7 +391,7 @@ template <template <typename> class Atom>
 typename AccessSpreader<Atom>::CompactStripe
     AccessSpreader<Atom>::widthAndCpuToStripe[kMaxCpus + 1][kMaxCpus] = {};
 
-#ifdef FOLLY_TLS
+#ifdef FOLLY_CL_USE_FOLLY_TLS
 template <template <typename> class Atom>
 FOLLY_TLS
     typename AccessSpreader<Atom>::CpuCache AccessSpreader<Atom>::cpuCache;

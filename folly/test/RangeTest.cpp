@@ -223,6 +223,7 @@ TEST(StringPiece, All) {
   EXPECT_EQ(s2, s);
 }
 
+#if !defined(__GLIBCXX__) || _GLIBCXX_USE_CXX11_ABI
 TEST(StringPiece, CustomAllocator) {
   using Alloc = AlignedSysAllocator<char>;
   Alloc const alloc{32};
@@ -235,6 +236,7 @@ TEST(StringPiece, CustomAllocator) {
   piece.reset(str);
   EXPECT_EQ("foo", piece.subpiece(0, 3));
 }
+#endif
 
 template <class T>
 void expectLT(const T& a, const T& b) {
@@ -1107,7 +1109,7 @@ void testRangeFunc(C&& x, size_t n) {
   const auto& cx = x;
   // type, conversion checks
   using R1Iter =
-      _t<std::conditional<_t<std::is_reference<C>>::value, int*, int const*>>;
+      std::conditional_t<_t<std::is_reference<C>>::value, int*, int const*>;
   Range<R1Iter> r1 = range(std::forward<C>(x));
   Range<const int*> r2 = range(std::forward<C>(x));
   Range<const int*> r3 = range(cx);
@@ -1445,14 +1447,15 @@ TEST(Range, LiteralSuffixContainsNulBytes) {
   EXPECT_EQ(5u, literalPiece.size());
 }
 
-class tag {};
+namespace {
+class fake_tag {};
 class fake_string_view {
  private:
   StringPiece piece_;
 
  public:
   using size_type = std::size_t;
-  explicit fake_string_view(char const* s, size_type c, tag = {})
+  explicit fake_string_view(char const* s, size_type c, fake_tag = {})
       : piece_(s, c) {}
   /* implicit */ operator StringPiece() const {
     return piece_;
@@ -1461,6 +1464,7 @@ class fake_string_view {
     return rhs == lhs.piece_;
   }
 };
+} // namespace
 
 TEST(Range, StringPieceExplicitConversionOperator) {
   using PieceM = StringPiece;
@@ -1514,8 +1518,8 @@ TEST(Range, StringPieceExplicitConversionOperator) {
   EXPECT_EQ("hello", fake_string_view{piecec});
   EXPECT_EQ("hello", piecem.to<fake_string_view>());
   EXPECT_EQ("hello", piecec.to<fake_string_view>());
-  EXPECT_EQ("hello", piecem.to<fake_string_view>(tag{}));
-  EXPECT_EQ("hello", piecec.to<fake_string_view>(tag{}));
+  EXPECT_EQ("hello", piecem.to<fake_string_view>(fake_tag{}));
+  EXPECT_EQ("hello", piecec.to<fake_string_view>(fake_tag{}));
 }
 
 TEST(Range, MutableStringPieceExplicitConversionOperator) {
@@ -1570,8 +1574,8 @@ TEST(Range, MutableStringPieceExplicitConversionOperator) {
   EXPECT_EQ("hello", fake_string_view{piecec});
   EXPECT_EQ("hello", piecem.to<fake_string_view>());
   EXPECT_EQ("hello", piecec.to<fake_string_view>());
-  EXPECT_EQ("hello", piecem.to<fake_string_view>(tag{}));
-  EXPECT_EQ("hello", piecec.to<fake_string_view>(tag{}));
+  EXPECT_EQ("hello", piecem.to<fake_string_view>(fake_tag{}));
+  EXPECT_EQ("hello", piecec.to<fake_string_view>(fake_tag{}));
 }
 
 #if FOLLY_HAS_STRING_VIEW

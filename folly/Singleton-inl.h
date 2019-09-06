@@ -143,6 +143,12 @@ folly::ReadMostlySharedPtr<T> SingletonHolder<T>::try_get_fast() {
 }
 
 template <typename T>
+template <typename Func>
+invoke_result_t<Func, T*> detail::SingletonHolder<T>::apply(Func f) {
+  return f(try_get().get());
+}
+
+template <typename T>
 void SingletonHolder<T>::vivify() {
   if (UNLIKELY(
           state_.load(std::memory_order_relaxed) !=
@@ -184,7 +190,7 @@ void SingletonHolder<T>::destroyInstance() {
 template <typename T>
 SingletonHolder<T>::SingletonHolder(
     TypeDescriptor typeDesc,
-    SingletonVault& vault)
+    SingletonVault& vault) noexcept
     : SingletonHolderBase(typeDesc), vault_(vault) {}
 
 template <typename T>

@@ -63,29 +63,19 @@ void AsyncServerSocket::RemoteAcceptor::start(
   setMaxReadAtOnce(maxAtOnce);
   queue_.setMaxQueueSize(maxInQueue);
 
-  if (!eventBase->runInEventBaseThread([=]() {
-        callback_->acceptStarted();
-        this->startConsuming(eventBase, &queue_);
-      })) {
-    throw std::invalid_argument(
-        "unable to start waiting on accept "
-        "notification queue in the specified "
-        "EventBase thread");
-  }
+  eventBase->runInEventBaseThread([=]() {
+    callback_->acceptStarted();
+    this->startConsuming(eventBase, &queue_);
+  });
 }
 
 void AsyncServerSocket::RemoteAcceptor::stop(
     EventBase* eventBase,
     AcceptCallback* callback) {
-  if (!eventBase->runInEventBaseThread([=]() {
-        callback->acceptStopped();
-        delete this;
-      })) {
-    throw std::invalid_argument(
-        "unable to start waiting on accept "
-        "notification queue in the specified "
-        "EventBase thread");
-  }
+  eventBase->runInEventBaseThread([=]() {
+    callback->acceptStopped();
+    delete this;
+  });
 }
 
 void AsyncServerSocket::RemoteAcceptor::messageAvailable(
@@ -315,11 +305,16 @@ void AsyncServerSocket::bindSocket(
   sockaddr* saddr = reinterpret_cast<sockaddr*>(&addrStorage);
 
   if (netops::bind(fd, saddr, address.getActualSize()) != 0) {
-    if (!isExistingSocket) {
-      closeNoInt(fd);
+    if (errno != EINPROGRESS) {
+      // Get a copy of errno so that it is not overwritten by subsequent calls.
+      auto errnoCopy = errno;
+      if (!isExistingSocket) {
+        closeNoInt(fd);
+      }
+      folly::throwSystemError(
+          errnoCopy,
+          "failed to bind to async server socket: " + address.describe());
     }
-    folly::throwSystemError(
-        errno, "failed to bind to async server socket: " + address.describe());
   }
 
 #if __linux__
@@ -337,9 +332,9 @@ void AsyncServerSocket::bindSocket(
 
 bool AsyncServerSocket::setZeroCopy(bool enable) {
   if (msgErrQueueSupported) {
-    int fd = getSocket();
     int val = enable ? 1 : 0;
-    int ret = setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &val, sizeof(val));
+    int ret = netops::setsockopt(
+        getNetworkSocket(), SOL_SOCKET, SO_ZEROCOPY, &val, sizeof(val));
 
     return (0 == ret);
   }
@@ -857,7 +852,7 @@ void AsyncServerSocket::handlerReady(
     }
 
     // Accept a new client socket
-#ifdef SOCK_NONBLOCK
+#if FOLLY_HAVE_ACCEPT4
     auto clientSocket = NetworkSocket::fromFd(
         accept4(fd.toFd(), saddr, &addrLen, SOCK_NONBLOCK));
 #else
@@ -882,16 +877,21 @@ void AsyncServerSocket::handlerReady(
         uint32_t tosWord = folly::Endian::big(buffer[0]);
         if (addressFamily == AF_INET6) {
           tosWord = (tosWord & 0x0FC00000) >> 20;
-          ret = netops::setsockopt(
-              clientSocket,
-              IPPROTO_IPV6,
-              IPV6_TCLASS,
-              &tosWord,
-              sizeof(tosWord));
+          // Set the TOS on the return socket only if it is non-zero
+          if (tosWord) {
+            ret = netops::setsockopt(
+                clientSocket,
+                IPPROTO_IPV6,
+                IPV6_TCLASS,
+                &tosWord,
+                sizeof(tosWord));
+          }
         } else if (addressFamily == AF_INET) {
           tosWord = (tosWord & 0x00FC0000) >> 16;
-          ret = netops::setsockopt(
-              clientSocket, IPPROTO_IP, IP_TOS, &tosWord, sizeof(tosWord));
+          if (tosWord) {
+            ret = netops::setsockopt(
+                clientSocket, IPPROTO_IP, IP_TOS, &tosWord, sizeof(tosWord));
+          }
         }
 
         if (ret != 0) {
@@ -952,7 +952,7 @@ void AsyncServerSocket::handlerReady(
       return;
     }
 
-#ifndef SOCK_NONBLOCK
+#if !FOLLY_HAVE_ACCEPT4
     // Explicitly set the new connection to non-blocking mode
     if (netops::set_socket_non_blocking(clientSocket) != 0) {
       closeNoInt(clientSocket);

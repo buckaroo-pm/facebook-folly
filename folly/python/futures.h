@@ -24,15 +24,10 @@
 #include <folly/Executor.h>
 #include <folly/futures/Future.h>
 #include <folly/python/AsyncioExecutor.h>
-#include <folly/python/executor_api.h>
+#include <folly/python/executor.h>
 
 namespace folly {
 namespace python {
-
-inline folly::Executor* getExecutor() {
-  import_folly__executor();
-  return get_executor();
-}
 
 template <typename T>
 void bridgeFuture(
@@ -62,6 +57,25 @@ void bridgeFuture(
     PyObject* userData) {
   bridgeFuture(
       getExecutor(), std::move(futureFrom), std::move(callback), userData);
+}
+
+template <typename T>
+void bridgeSemiFuture(
+    folly::Executor* executor,
+    folly::SemiFuture<T>&& semiFutureFrom,
+    folly::Function<void(folly::Try<T>&&, PyObject*)> callback,
+    PyObject* userData) {
+  folly::Future<T> futureFrom = std::move(semiFutureFrom).via(executor);
+  bridgeFuture(executor, std::move(futureFrom), std::move(callback), userData);
+}
+
+template <typename T>
+void bridgeSemiFuture(
+    folly::SemiFuture<T>&& semiFutureFrom,
+    folly::Function<void(folly::Try<T>&&, PyObject*)> callback,
+    PyObject* userData) {
+  bridgeSemiFuture(
+      getExecutor(), std::move(semiFutureFrom), std::move(callback), userData);
 }
 
 } // namespace python

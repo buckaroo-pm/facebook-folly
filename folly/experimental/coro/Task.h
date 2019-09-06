@@ -20,30 +20,23 @@
 
 #include <glog/logging.h>
 
+#include <folly/CancellationToken.h>
 #include <folly/Executor.h>
 #include <folly/Portability.h>
 #include <folly/ScopeGuard.h>
 #include <folly/Try.h>
+#include <folly/experimental/coro/CurrentExecutor.h>
 #include <folly/experimental/coro/Traits.h>
 #include <folly/experimental/coro/Utils.h>
 #include <folly/experimental/coro/ViaIfAsync.h>
+#include <folly/experimental/coro/WithCancellation.h>
 #include <folly/experimental/coro/detail/InlineTask.h>
+#include <folly/experimental/coro/detail/Traits.h>
 #include <folly/futures/Future.h>
 #include <folly/io/async/Request.h>
 
 namespace folly {
 namespace coro {
-
-namespace detail {
-struct co_current_executor_ {
-  enum class secret_ { token_ };
-  explicit constexpr co_current_executor_(secret_) {}
-};
-} // namespace detail
-
-using co_current_executor_t = detail::co_current_executor_;
-constexpr co_current_executor_t co_current_executor{
-    co_current_executor_t::secret_::token_};
 
 template <typename T = void>
 class Task;
@@ -73,7 +66,7 @@ class TaskPromiseBase {
   friend class FinalAwaiter;
 
  protected:
-  TaskPromiseBase() noexcept : executor_(nullptr) {}
+  TaskPromiseBase() noexcept {}
 
  public:
   std::experimental::suspend_always initial_suspend() noexcept {
@@ -84,17 +77,27 @@ class TaskPromiseBase {
     return {};
   }
 
-  template <typename U>
-  auto await_transform(Task<U>&& t) noexcept;
-
   template <typename Awaitable>
   auto await_transform(Awaitable&& awaitable) noexcept {
-    using folly::coro::co_viaIfAsync;
-    return co_viaIfAsync(executor_, static_cast<Awaitable&&>(awaitable));
+    return folly::coro::co_viaIfAsync(
+        executor_.get_alias(),
+        folly::coro::co_withCancellation(
+            cancelToken_, static_cast<Awaitable&&>(awaitable)));
   }
 
   auto await_transform(co_current_executor_t) noexcept {
-    return AwaitableReady<folly::Executor*>{executor_};
+    return AwaitableReady<folly::Executor*>{executor_.get()};
+  }
+
+  auto await_transform(co_current_cancellation_token_t) noexcept {
+    return AwaitableReady<const folly::CancellationToken&>{cancelToken_};
+  }
+
+  void setCancelToken(const folly::CancellationToken& cancelToken) {
+    if (!hasCancelTokenOverride_) {
+      cancelToken_ = cancelToken;
+      hasCancelTokenOverride_ = true;
+    }
   }
 
  private:
@@ -105,12 +108,21 @@ class TaskPromiseBase {
   friend class folly::coro::Task;
 
   std::experimental::coroutine_handle<> continuation_;
-  folly::Executor* executor_;
+  folly::Executor::KeepAlive<> executor_;
+  folly::CancellationToken cancelToken_;
+  bool hasCancelTokenOverride_ = false;
 };
 
 template <typename T>
 class TaskPromise : public TaskPromiseBase {
  public:
+  static_assert(
+      !std::is_rvalue_reference_v<T>,
+      "Task<T&&> is not supported. "
+      "Consider using Task<T> or Task<std::unique_ptr<T>> instead.");
+
+  using StorageType = detail::lift_lvalue_reference_t<T>;
+
   TaskPromise() noexcept = default;
 
   Task<T> get_return_object() noexcept;
@@ -123,27 +135,39 @@ class TaskPromise : public TaskPromiseBase {
   template <typename U>
   void return_value(U&& value) {
     static_assert(
-        std::is_convertible<U&&, T>::value,
+        std::is_convertible<U&&, StorageType>::value,
         "cannot convert return value to type T");
     result_.emplace(static_cast<U&&>(value));
   }
 
-  Try<T>& result() {
+  void return_value(const Try<StorageType>& t) {
+    DCHECK(t.hasValue() || t.hasException());
+    result_ = t;
+  }
+
+  void return_value(Try<StorageType>& t) {
+    DCHECK(t.hasValue() || t.hasException());
+    result_ = t;
+  }
+
+  void return_value(Try<StorageType>&& t) {
+    DCHECK(t.hasValue() || t.hasException());
+    result_ = std::move(t);
+  }
+
+  Try<StorageType>& result() {
     return result_;
   }
 
  private:
-  using StorageType = std::conditional_t<
-      std::is_reference<T>::value,
-      std::reference_wrapper<std::remove_reference_t<T>>,
-      T>;
-
   Try<StorageType> result_;
 };
 
 template <>
 class TaskPromise<void> : public TaskPromiseBase {
  public:
+  using StorageType = void;
+
   TaskPromise() noexcept = default;
 
   Task<void> get_return_object() noexcept;
@@ -153,7 +177,9 @@ class TaskPromise<void> : public TaskPromiseBase {
         exception_wrapper::from_exception_ptr(std::current_exception()));
   }
 
-  void return_void() noexcept {}
+  void return_void() noexcept {
+    result_.emplace();
+  }
 
   Try<void>& result() {
     return result_;
@@ -174,6 +200,7 @@ class TaskPromise<void> : public TaskPromiseBase {
 template <typename T>
 class FOLLY_NODISCARD TaskWithExecutor {
   using handle_t = std::experimental::coroutine_handle<detail::TaskPromise<T>>;
+  using StorageType = typename detail::TaskPromise<T>::StorageType;
 
  public:
   ~TaskWithExecutor() {
@@ -191,7 +218,7 @@ class FOLLY_NODISCARD TaskWithExecutor {
   }
 
   folly::Executor* executor() const noexcept {
-    return coro_.promise().executor_;
+    return coro_.promise().executor_.get();
   }
 
   void swap(TaskWithExecutor& t) noexcept {
@@ -201,21 +228,33 @@ class FOLLY_NODISCARD TaskWithExecutor {
   // Start execution of this task eagerly and return a folly::SemiFuture<T>
   // that will complete with the result.
   auto start() && {
-    Promise<lift_unit_t<T>> p;
+    Promise<lift_unit_t<StorageType>> p;
+
     auto sf = p.getSemiFuture();
 
-    [](Promise<lift_unit_t<T>> p,
-       TaskWithExecutor task) -> detail::InlineTaskDetached {
-      try {
-        p.setTry(co_await std::move(task).co_awaitTry());
-      } catch (const std::exception& e) {
-        p.setException(exception_wrapper(std::current_exception(), e));
-      } catch (...) {
-        p.setException(exception_wrapper(std::current_exception()));
-      }
-    }(std::move(p), std::move(*this));
+    std::move(*this).start(
+        [promise = std::move(p)](Try<StorageType>&& result) mutable {
+          promise.setTry(std::move(result));
+        });
 
     return sf;
+  }
+
+  // Start execution of this task eagerly and call the callback when complete.
+  template <typename F>
+  void start(F&& tryCallback, folly::CancellationToken cancelToken = {}) && {
+    coro_.promise().setCancelToken(std::move(cancelToken));
+
+    [](TaskWithExecutor task,
+       std::decay_t<F> cb) -> detail::InlineTaskDetached {
+      try {
+        cb(co_await std::move(task).co_awaitTry());
+      } catch (const std::exception& e) {
+        cb(Try<StorageType>(exception_wrapper(std::current_exception(), e)));
+      } catch (...) {
+        cb(Try<StorageType>(exception_wrapper(std::current_exception())));
+      }
+    }(std::move(*this), std::forward<F>(tryCallback));
   }
 
   template <typename ResultCreator>
@@ -233,11 +272,11 @@ class FOLLY_NODISCARD TaskWithExecutor {
       return false;
     }
 
-    void await_suspend(
+    FOLLY_CORO_AWAIT_SUSPEND_NONTRIVIAL_ATTRIBUTES void await_suspend(
         std::experimental::coroutine_handle<> continuation) noexcept {
       auto& promise = coro_.promise();
       DCHECK(!promise.continuation_);
-      DCHECK(promise.executor_ != nullptr);
+      DCHECK(promise.executor_);
 
       promise.continuation_ = continuation;
       promise.executor_->add(
@@ -261,13 +300,13 @@ class FOLLY_NODISCARD TaskWithExecutor {
   };
 
   struct ValueCreator {
-    T operator()(Try<T>&& t) {
+    T operator()(Try<StorageType>&& t) const {
       return std::move(t).value();
     }
   };
 
   struct TryCreator {
-    Try<T> operator()(Try<T>&& t) {
+    Try<StorageType> operator()(Try<StorageType>&& t) const {
       return std::move(t);
     }
   };
@@ -278,6 +317,13 @@ class FOLLY_NODISCARD TaskWithExecutor {
 
   auto co_awaitTry() && noexcept {
     return Awaiter<TryCreator>{std::exchange(coro_, {})};
+  }
+
+  friend TaskWithExecutor co_withCancellation(
+      const folly::CancellationToken& cancelToken,
+      TaskWithExecutor&& task) noexcept {
+    task.coro_.promise().setCancelToken(cancelToken);
+    return std::move(task);
   }
 
  private:
@@ -314,8 +360,10 @@ template <typename T>
 class FOLLY_NODISCARD Task {
  public:
   using promise_type = detail::TaskPromise<T>;
+  using StorageType = typename promise_type::StorageType;
 
  private:
+  class Awaiter;
   using handle_t = std::experimental::coroutine_handle<promise_type>;
 
  public:
@@ -343,30 +391,37 @@ class FOLLY_NODISCARD Task {
   /// Returns a new task that when co_awaited will launch execution of this
   /// task on the specified executor.
   FOLLY_NODISCARD
-  TaskWithExecutor<T> scheduleOn(Executor* executor) && noexcept {
-    coro_.promise().executor_ = executor;
+  TaskWithExecutor<T> scheduleOn(Executor::KeepAlive<> executor) && noexcept {
+    coro_.promise().executor_ = std::move(executor);
     return TaskWithExecutor<T>{std::exchange(coro_, {})};
   }
 
-  SemiFuture<folly::lift_unit_t<T>> semi() && {
-    return makeSemiFuture().defer(
-        [task = std::move(*this)](Executor* executor, Try<Unit>&&) mutable {
-          return std::move(task).scheduleOn(executor).start();
+  SemiFuture<folly::lift_unit_t<StorageType>> semi() && {
+    return makeSemiFuture().deferExTry(
+        [task = std::move(*this)](
+            const Executor::KeepAlive<>& executor, Try<Unit>&&) mutable {
+          return std::move(task).scheduleOn(executor.get()).start();
         });
+  }
+
+  friend auto co_viaIfAsync(
+      Executor::KeepAlive<> executor,
+      Task<T>&& t) noexcept {
+    // Child task inherits the awaiting task's executor
+    t.coro_.promise().executor_ = std::move(executor);
+    return Awaiter{std::exchange(t.coro_, {})};
+  }
+
+  friend Task co_withCancellation(
+      const folly::CancellationToken& cancelToken,
+      Task&& task) noexcept {
+    task.coro_.promise().setCancelToken(cancelToken);
+    return std::move(task);
   }
 
  private:
   friend class detail::TaskPromiseBase;
   friend class detail::TaskPromise<T>;
-
-  Task(handle_t coro) noexcept : coro_(coro) {}
-
-  handle_t coro_;
-};
-
-template <typename T>
-auto detail::TaskPromiseBase::await_transform(Task<T>&& t) noexcept {
-  using handle_t = std::experimental::coroutine_handle<detail::TaskPromise<T>>;
 
   class Awaiter {
    public:
@@ -393,21 +448,24 @@ auto detail::TaskPromiseBase::await_transform(Task<T>&& t) noexcept {
     }
 
     T await_resume() {
+      return await_resume_try().value();
+    }
+
+    auto await_resume_try() {
       SCOPE_EXIT {
         std::exchange(coro_, {}).destroy();
       };
-      return std::move(coro_.promise().result()).value();
+      return std::move(coro_.promise().result());
     }
 
    private:
     handle_t coro_;
   };
 
-  // Child task inherits the awaiting task's executor
-  t.coro_.promise().executor_ = executor_;
+  Task(handle_t coro) noexcept : coro_(coro) {}
 
-  return Awaiter{std::exchange(t.coro_, {})};
-}
+  handle_t coro_;
+};
 
 template <typename T>
 Task<T> detail::TaskPromise<T>::get_return_object() noexcept {

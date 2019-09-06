@@ -254,7 +254,6 @@ TEST_F(HHWheelTimerTest, DestroyTimeoutSet) {
 /*
  * Test an event scheduled before the last event fires on time
  */
-
 TEST_F(HHWheelTimerTest, SlowFast) {
   StackWheelTimer t(&eventBase, milliseconds(1));
 
@@ -276,9 +275,8 @@ TEST_F(HHWheelTimerTest, SlowFast) {
   ASSERT_EQ(t2.timestamps.size(), 1);
   ASSERT_EQ(t.count(), 0);
 
-  // Check that the timeout was delayed by sleep
-  T_CHECK_TIMEOUT(start, t1.timestamps[0], milliseconds(10), milliseconds(1));
-  T_CHECK_TIMEOUT(start, t2.timestamps[0], milliseconds(5), milliseconds(1));
+  T_CHECK_TIMEOUT(start, t1.timestamps[0], milliseconds(10));
+  T_CHECK_TIMEOUT(start, t2.timestamps[0], milliseconds(5));
 }
 
 TEST_F(HHWheelTimerTest, ReschedTest) {
@@ -307,8 +305,8 @@ TEST_F(HHWheelTimerTest, ReschedTest) {
   ASSERT_EQ(t2.timestamps.size(), 1);
   ASSERT_EQ(t.count(), 0);
 
-  T_CHECK_TIMEOUT(start, t1.timestamps[0], milliseconds(128), milliseconds(1));
-  T_CHECK_TIMEOUT(start2, t2.timestamps[0], milliseconds(255), milliseconds(1));
+  T_CHECK_TIMEOUT(start, t1.timestamps[0], milliseconds(128));
+  T_CHECK_TIMEOUT(start2, t2.timestamps[0], milliseconds(255));
 }
 
 TEST_F(HHWheelTimerTest, DeleteWheelInTimeout) {
@@ -335,7 +333,7 @@ TEST_F(HHWheelTimerTest, DeleteWheelInTimeout) {
   ASSERT_EQ(t1.timestamps.size(), 1);
   ASSERT_EQ(t2.timestamps.size(), 0);
 
-  T_CHECK_TIMEOUT(start, t1.timestamps[0], milliseconds(128), milliseconds(1));
+  T_CHECK_TIMEOUT(start, t1.timestamps[0], milliseconds(128));
 }
 
 /*
@@ -488,4 +486,34 @@ TEST_F(HHWheelTimerTest, prematureTimeout) {
   auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
       t2.timestamps[0].getTime() - start);
   EXPECT_GE(elapsedMs.count(), timeout.count());
+}
+
+TEST_F(HHWheelTimerTest, Level1) {
+  StackWheelTimer t(&eventBase, milliseconds(1));
+  TestTimeout tt;
+  // Schedule the timeout for the tick in a next epoch.
+  t.scheduleTimeout(&tt, std::chrono::milliseconds(500));
+  TimePoint start;
+  eventBase.loop();
+  TimePoint end;
+  ASSERT_EQ(tt.timestamps.size(), 1);
+  T_CHECK_TIMEOUT(start, end, milliseconds(500));
+}
+
+// Test that we handle negative timeouts properly (i.e. treat them as 0)
+TEST_F(HHWheelTimerTest, NegativeTimeout) {
+  StackWheelTimer t(&eventBase, milliseconds(1));
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  TestTimeout tt1;
+  TestTimeout tt2;
+  // Make sure we have event scheduled.
+  t.scheduleTimeout(&tt1, std::chrono::milliseconds(1));
+  // Schedule another timeout that would appear to be earlier than
+  // the already scheduled one.
+  t.scheduleTimeout(&tt2, std::chrono::milliseconds(-500000000));
+  TimePoint start;
+  eventBase.loop();
+  TimePoint end;
+  ASSERT_EQ(tt2.timestamps.size(), 1);
+  T_CHECK_TIMEOUT(start, end, milliseconds(1));
 }

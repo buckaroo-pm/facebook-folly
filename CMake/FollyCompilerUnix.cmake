@@ -15,8 +15,8 @@ set(
 mark_as_advanced(CXX_STD)
 
 set(CMAKE_CXX_FLAGS_COMMON "-g -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_COMMON}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_COMMON} -O3")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${CMAKE_CXX_FLAGS_COMMON}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_COMMON} -O3")
 
 # Note that CMAKE_REQUIRED_FLAGS must be a string, not a list
 set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=${CXX_STD}")
@@ -34,7 +34,6 @@ function(apply_folly_compile_options_to_target THETARGET)
       -std=${CXX_STD}
       -finput-charset=UTF-8
       -fsigned-char
-      -Werror
       -Wall
       -Wno-deprecated
       -Wno-deprecated-declarations
@@ -42,7 +41,6 @@ function(apply_folly_compile_options_to_target THETARGET)
       -Wno-unused
       -Wunused-label
       -Wunused-result
-      -Wnon-virtual-dtor
       ${FOLLY_CXX_FLAGS}
   )
 endfunction()

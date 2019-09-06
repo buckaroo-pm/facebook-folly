@@ -23,8 +23,6 @@
 #include <limits>
 #include <type_traits>
 
-#include <boost/noncopyable.hpp>
-
 #include <folly/Traits.h>
 #include <folly/concurrency/CacheLocality.h>
 #include <folly/detail/TurnSequencer.h>
@@ -116,6 +114,9 @@ class MPMCQueue : public detail::MPMCQueueBase<MPMCQueue<T, Atom, Dynamic>> {
 
   MPMCQueue() noexcept {}
 };
+
+/// *** The dynamic version of MPMCQueue is deprecated. ***
+/// Use UnboundedQueue instead.
 
 /// The dynamic version of MPMCQueue allows dynamic expansion of queue
 /// capacity, such that a queue may start with a smaller capacity than
@@ -640,7 +641,7 @@ template <
     typename T,
     template <typename> class Atom,
     bool Dynamic>
-class MPMCQueueBase<Derived<T, Atom, Dynamic>> : boost::noncopyable {
+class MPMCQueueBase<Derived<T, Atom, Dynamic>> {
   // Note: Using CRTP static casts in several functions of this base
   // template instead of making called functions virtual or duplicating
   // the code of calling functions in the derived partially specialized
@@ -732,6 +733,9 @@ class MPMCQueueBase<Derived<T, Atom, Dynamic>> : boost::noncopyable {
     }
     return *this;
   }
+
+  MPMCQueueBase(const MPMCQueueBase&) = delete;
+  MPMCQueueBase& operator=(const MPMCQueueBase&) = delete;
 
   /// MPMCQueue can only be safely destroyed when there are no
   /// pending enqueuers or dequeuers (this is not checked).
@@ -1454,9 +1458,9 @@ struct SingleElementQueue {
     } catch (...) {
       // g++ doesn't seem to have std::is_nothrow_destructible yet
     }
-#ifndef NDEBUG
-    memset(&contents_, 'Q', sizeof(T));
-#endif
+    if (kIsDebug) {
+      memset(&contents_, 'Q', sizeof(T));
+    }
   }
 
   /// Tag classes for dispatching to enqueue/dequeue implementation.

@@ -21,12 +21,50 @@
 #include <folly/executors/InlineExecutor.h>
 #include <folly/executors/ManualExecutor.h>
 #include <folly/experimental/coro/Baton.h>
+#include <folly/experimental/coro/BlockingWait.h>
 #include <folly/experimental/coro/Mutex.h>
+#include <folly/experimental/coro/SharedMutex.h>
 #include <folly/experimental/coro/Task.h>
 #include <folly/experimental/coro/detail/InlineTask.h>
+#include <folly/futures/Future.h>
 #include <folly/portability/GTest.h>
 
+#include <type_traits>
+
 using namespace folly;
+
+static_assert(
+    std::is_same<
+        folly::coro::semi_await_result_t<folly::coro::Task<void>>,
+        void>::value,
+    "");
+static_assert(
+    std::is_same<
+        folly::coro::semi_await_result_t<folly::coro::Task<int>>,
+        int>::value,
+    "");
+
+static_assert(
+    std::is_same<
+        folly::coro::semi_await_result_t<folly::coro::detail::InlineTask<void>>,
+        void>::value,
+    "");
+static_assert(
+    std::is_same<
+        folly::coro::semi_await_result_t<folly::coro::detail::InlineTask<int>>,
+        int>::value,
+    "");
+
+static_assert(
+    std::is_same<folly::coro::semi_await_result_t<folly::coro::Baton&>, void>::
+        value,
+    "");
+static_assert(
+    std::is_same<
+        folly::coro::semi_await_result_t<decltype(
+            std::declval<folly::coro::SharedMutex&>().co_scoped_lock_shared())>,
+        folly::coro::SharedLock<folly::coro::SharedMutex>>::value,
+    "");
 
 namespace {
 
@@ -264,7 +302,8 @@ TEST(Task, RequestContextSideEffectsArePreserved) {
 
     // HACK: Need to use co_viaIfAsync() to ensure request context is preserved
     // across suspend-point.
-    co_await co_viaIfAsync(&folly::InlineExecutor::instance(), baton);
+    co_await folly::coro::co_viaIfAsync(
+        &folly::InlineExecutor::instance(), baton);
 
     EXPECT_NE(RequestContext::get()->getContextData(testToken1), nullptr);
 
@@ -295,6 +334,76 @@ TEST(Task, RequestContextSideEffectsArePreserved) {
 
   EXPECT_TRUE(t.isReady());
   EXPECT_FALSE(t.hasException());
+}
+
+TEST(Task, FutureTailCall) {
+  EXPECT_EQ(
+      42,
+      folly::coro::blockingWait(
+          folly::coro::co_invoke([&]() -> folly::coro::Task<int> {
+            co_return co_await folly::makeSemiFuture().deferValue(
+                [](auto) { return folly::makeSemiFuture(42); });
+          })));
+}
+
+// NOTE: This function is unused.
+// We just want to make sure this compiles without errors or warnings.
+folly::coro::Task<void>
+checkAwaitingFutureOfUnitDoesntWarnAboutDiscardedResult() {
+  co_await folly::makeSemiFuture();
+
+  using namespace std::literals::chrono_literals;
+  co_await folly::futures::sleep(1ms);
+}
+
+folly::coro::Task<int&> returnIntRef(int& value) {
+  co_return value;
+}
+
+TEST(Task, TaskOfLvalueReference) {
+  int value = 123;
+  auto&& result = folly::coro::blockingWait(returnIntRef(value));
+  static_assert(std::is_same_v<decltype(result), int&>);
+  CHECK_EQ(&value, &result);
+}
+
+TEST(Task, TaskOfLvalueReferenceAsTry) {
+  folly::coro::blockingWait([]() -> folly::coro::Task<void> {
+    int value = 123;
+    auto&& result = co_await co_awaitTry(returnIntRef(value));
+    CHECK(result.hasValue());
+    CHECK_EQ(&value, &result.value().get());
+
+    int& valueRef = co_await returnIntRef(value);
+    CHECK_EQ(&value, &valueRef);
+  }());
+}
+
+TEST(Task, CancellationPropagation) {
+  folly::coro::blockingWait([]() -> folly::coro::Task<void> {
+    auto token = co_await folly::coro::co_current_cancellation_token;
+    CHECK(!token.canBeCancelled());
+
+    folly::CancellationSource cancelSource;
+
+    co_await folly::coro::co_withCancellation(
+        cancelSource.getToken(), [&]() -> folly::coro::Task<void> {
+          auto token2 = co_await folly::coro::co_current_cancellation_token;
+          CHECK(token2.canBeCancelled());
+          CHECK(!token2.isCancellationRequested());
+
+          // The cancellation token should implicitly propagate into the
+          //
+          co_await[&]()->folly::coro::Task<void> {
+            auto token3 = co_await folly::coro::co_current_cancellation_token;
+            CHECK(token3 == token2);
+            cancelSource.requestCancellation();
+            CHECK(token3.isCancellationRequested());
+          }
+          ();
+          CHECK(token2.isCancellationRequested());
+        }());
+  }());
 }
 
 #endif

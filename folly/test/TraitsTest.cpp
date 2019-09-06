@@ -20,6 +20,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <folly/ScopeGuard.h>
 #include <folly/portability/GTest.h>
@@ -76,7 +77,7 @@ TEST(Traits, scalars) {
 }
 
 TEST(Traits, containers) {
-  EXPECT_TRUE(IsRelocatable<vector<F1>>::value);
+  EXPECT_FALSE(IsRelocatable<vector<F1>>::value);
   EXPECT_TRUE((IsRelocatable<pair<F1, F1>>::value));
   EXPECT_TRUE((IsRelocatable<pair<T1, T2>>::value));
 }
@@ -101,6 +102,29 @@ TEST(Traits, unset) {
 TEST(Traits, bitAndInit) {
   EXPECT_TRUE(IsZeroInitializable<int>::value);
   EXPECT_FALSE(IsZeroInitializable<vector<int>>::value);
+}
+
+template <bool V>
+struct Cond {
+  template <typename K = std::string>
+  static auto fun_std(std::conditional_t<V, K, std::string>&& arg) {
+    return std::is_same<remove_cvref_t<decltype(arg)>, std::string>{};
+  }
+  template <typename K = std::string>
+  static auto fun_folly(folly::conditional_t<V, K, std::string>&& arg) {
+    return std::is_same<remove_cvref_t<decltype(arg)>, std::string>{};
+  }
+};
+
+TEST(Traits, conditional) {
+  using folly::conditional_t;
+  EXPECT_TRUE((std::is_same<conditional_t<false, char, int>, int>::value));
+  EXPECT_TRUE((std::is_same<conditional_t<true, char, int>, char>::value));
+
+  EXPECT_TRUE(Cond<false>::fun_std("hello"));
+  EXPECT_TRUE(Cond<true>::fun_std("hello"));
+  EXPECT_TRUE(Cond<false>::fun_folly("hello"));
+  EXPECT_FALSE(Cond<true>::fun_folly("hello"));
 }
 
 TEST(Trait, logicOperators) {
@@ -221,6 +245,26 @@ TEST(Traits, actuallyRelocatable) {
   testIsRelocatable<std::string>(sizeof(std::string) + 1, 'x');
 
   testIsRelocatable<std::vector<char>>(5, 'g');
+}
+
+struct inspects_tag {
+  template <typename T>
+  std::false_type is_char(tag_t<T>) const {
+    return {};
+  }
+  std::true_type is_char(tag_t<char>) const {
+    return {};
+  }
+};
+
+TEST(Traits, tag) {
+  inspects_tag f;
+  EXPECT_FALSE(f.is_char(tag_t<int>{}));
+  EXPECT_TRUE(f.is_char(tag_t<char>{}));
+#if __cplusplus >= 201703L
+  EXPECT_FALSE(f.is_char(tag<int>));
+  EXPECT_TRUE(f.is_char(tag<char>));
+#endif
 }
 
 namespace {

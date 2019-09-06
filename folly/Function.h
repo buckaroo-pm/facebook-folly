@@ -353,7 +353,7 @@ struct FunctionTraits<ReturnType(Args...)> {
 
   template <typename F>
   using ResultOf =
-      SafeResultOf<CallableResult<_t<std::decay<F>>&, Args...>, ReturnType>;
+      SafeResultOf<CallableResult<std::decay_t<F>&, Args...>, ReturnType>;
 
   template <typename Fun>
   static ReturnType callSmall(Data& p, Args&&... args) {
@@ -389,9 +389,8 @@ struct FunctionTraits<ReturnType(Args...) const> {
   using OtherSignature = NonConstSignature;
 
   template <typename F>
-  using ResultOf = SafeResultOf<
-      CallableResult<const _t<std::decay<F>>&, Args...>,
-      ReturnType>;
+  using ResultOf =
+      SafeResultOf<CallableResult<const std::decay_t<F>&, Args...>, ReturnType>;
 
   template <typename Fun>
   static ReturnType callSmall(Data& p, Args&&... args) {
@@ -429,7 +428,7 @@ struct FunctionTraits<ReturnType(Args...) noexcept> {
 
   template <typename F>
   using ResultOf =
-      SafeResultOf<CallableResult<_t<std::decay<F>>&, Args...>, ReturnType>;
+      SafeResultOf<CallableResult<std::decay_t<F>&, Args...>, ReturnType>;
 
   template <typename Fun>
   static ReturnType callSmall(Data& p, Args&&... args) noexcept {
@@ -465,9 +464,8 @@ struct FunctionTraits<ReturnType(Args...) const noexcept> {
   using OtherSignature = NonConstSignature;
 
   template <typename F>
-  using ResultOf = SafeResultOf<
-      CallableResult<const _t<std::decay<F>>&, Args...>,
-      ReturnType>;
+  using ResultOf =
+      SafeResultOf<CallableResult<const std::decay_t<F>&, Args...>, ReturnType>;
 
   template <typename Fun>
   static ReturnType callSmall(Data& p, Args&&... args) noexcept {
@@ -496,7 +494,7 @@ struct FunctionTraits<ReturnType(Args...) const noexcept> {
 #endif
 
 template <typename Fun>
-bool execSmall(Op o, Data* src, Data* dst) {
+std::size_t execSmall(Op o, Data* src, Data* dst) {
   switch (o) {
     case Op::MOVE:
       ::new (static_cast<void*>(&dst->tiny))
@@ -508,11 +506,11 @@ bool execSmall(Op o, Data* src, Data* dst) {
     case Op::HEAP:
       break;
   }
-  return false;
+  return 0U;
 }
 
 template <typename Fun>
-bool execBig(Op o, Data* src, Data* dst) {
+std::size_t execBig(Op o, Data* src, Data* dst) {
   switch (o) {
     case Op::MOVE:
       dst->big = src->big;
@@ -524,7 +522,7 @@ bool execBig(Op o, Data* src, Data* dst) {
     case Op::HEAP:
       break;
   }
-  return true;
+  return sizeof(Fun);
 }
 
 } // namespace function
@@ -543,7 +541,7 @@ class Function final : private detail::function::FunctionTraits<FunctionType> {
 
   using Traits = detail::function::FunctionTraits<FunctionType>;
   using Call = typename Traits::Call;
-  using Exec = bool (*)(Op, Data*, Data*);
+  using Exec = std::size_t (*)(Op, Data*, Data*);
 
   template <typename Fun>
   using IsSmall = detail::function::IsSmall<Fun>;
@@ -556,8 +554,11 @@ class Function final : private detail::function::FunctionTraits<FunctionType> {
   Call call_{&Traits::uninitCall};
   Exec exec_{nullptr};
 
-  bool exec(Op o, Data* src, Data* dst) const {
-    return exec_ && exec_(o, src, dst);
+  std::size_t exec(Op o, Data* src, Data* dst) const {
+    if (!exec_) {
+      return 0U;
+    }
+    return exec_(o, src, dst);
   }
 
   friend Traits;
@@ -801,12 +802,11 @@ class Function final : private detail::function::FunctionTraits<FunctionType> {
   }
 
   /**
-   * Returns `true` if this `Function` stores the callable on the
-   * heap. If `false` is returned, there has been no additional memory
-   * allocation and the callable is stored inside the `Function`
-   * object itself.
+   * Returns the size of the allocation made to store the callable on the
+   * heap. If `0` is returned, there has been no additional memory
+   * allocation because the callable is stored within the `Function` object.
    */
-  bool hasAllocatedMemory() const noexcept {
+  std::size_t heapAllocatedMemory() const noexcept {
     return exec(Op::HEAP, nullptr, nullptr);
   }
 
@@ -920,7 +920,7 @@ class FunctionRef<ReturnType(Args...)> final {
 
   template <typename Fun>
   static ReturnType call(void* object, Args&&... args) {
-    using Pointer = _t<std::add_pointer<Fun>>;
+    using Pointer = std::add_pointer_t<Fun>;
     return static_cast<ReturnType>(invoke(
         static_cast<Fun&&>(*static_cast<Pointer>(object)),
         static_cast<Args&&>(args)...));
@@ -951,7 +951,7 @@ class FunctionRef<ReturnType(Args...)> final {
       typename Fun,
       typename std::enable_if<
           Conjunction<
-              Negation<std::is_same<FunctionRef, _t<std::decay<Fun>>>>,
+              Negation<std::is_same<FunctionRef, std::decay_t<Fun>>>,
               is_invocable_r<ReturnType, Fun&&, Args&&...>>::value,
           int>::type = 0>
   constexpr /* implicit */ FunctionRef(Fun&& fun) noexcept

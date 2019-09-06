@@ -90,7 +90,7 @@ class ScopeGuardImpl : public ScopeGuardImplBase {
     // on the value of other.dismissed_. The following lines only execute
     // if the move/copy succeeded, in which case *this assumes ownership of
     // the cleanup action and dismisses other.
-    dismissed_ = exchange(other.dismissed_, true);
+    dismissed_ = std::exchange(other.dismissed_, true);
   }
 
   ~ScopeGuardImpl() noexcept(InvokeNoexcept) {
@@ -140,7 +140,7 @@ using ScopeGuardImplDecay = ScopeGuardImpl<typename std::decay<F>::type, INE>;
 /**
  * ScopeGuard is a general implementation of the "Initialization is
  * Resource Acquisition" idiom.  Basically, it guarantees that a function
- * is executed upon leaving the currrent scope unless otherwise told.
+ * is executed upon leaving the current scope unless otherwise told.
  *
  * The makeGuard() function is used to create a new ScopeGuard object.
  * It can be instantiated with a lambda function, a std::function<void()>,

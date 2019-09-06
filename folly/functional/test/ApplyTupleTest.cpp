@@ -22,6 +22,7 @@
 
 #include <array>
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -429,24 +430,23 @@ TEST(MakeFromTupleTest, make_from_tuple) {
 }
 
 TEST(MakeIndexSequenceFromTuple, Basic) {
-  using folly::index_sequence;
   using folly::index_sequence_for_tuple;
   using OneElementTuple = std::tuple<int>;
   using TwoElementTuple = std::tuple<int>;
 
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<OneElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<const OneElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
 
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<TwoElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<const TwoElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
 }
 
 TEST(ApplyResult, Basic) {
@@ -575,10 +575,18 @@ TEST(ForwardTuple, Basic) {
                decltype(folly::forward_tuple(std::move(tuple))),
                std::tuple<int&&, double&&>>::value));
   EXPECT_EQ(folly::forward_tuple(std::move(tuple)), tuple);
+#if defined(__GLIBCXX__) && (!defined(_GLIBCXX_RELEASE) || _GLIBCXX_RELEASE < 8)
+  constexpr bool before_lwg2485 = true;
+#else
+  constexpr bool before_lwg2485 = false;
+#endif
   EXPECT_TRUE(
       (std::is_same<
           decltype(folly::forward_tuple(std::move(folly::as_const(tuple)))),
-          std::tuple<const int&, const double&>>::value));
+          std::conditional_t<
+              before_lwg2485,
+              std::tuple<const int&, const double&>,
+              std::tuple<const int&&, const double&&>>>::value));
   EXPECT_EQ(folly::forward_tuple(std::move(folly::as_const(tuple))), tuple);
 
   auto integer = 1;

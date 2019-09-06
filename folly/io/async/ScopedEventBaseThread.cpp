@@ -40,8 +40,7 @@ static void run(
   eb->loopForever();
 
   // must destruct in io thread for on-destruction callbacks
-  EventBase::StackFunctionLoopCallback cb([=] { ebm->clearEventBase(); });
-  eb->runOnDestruction(&cb);
+  eb->runOnDestruction([=] { ebm->clearEventBase(); });
   // wait until terminateLoopSoon() is complete
   stop->wait();
   eb->~EventBase();
@@ -50,7 +49,7 @@ static void run(
 ScopedEventBaseThread::ScopedEventBaseThread()
     : ScopedEventBaseThread(nullptr, "") {}
 
-ScopedEventBaseThread::ScopedEventBaseThread(const StringPiece& name)
+ScopedEventBaseThread::ScopedEventBaseThread(StringPiece name)
     : ScopedEventBaseThread(nullptr, name) {}
 
 ScopedEventBaseThread::ScopedEventBaseThread(EventBaseManager* ebm)
@@ -58,7 +57,7 @@ ScopedEventBaseThread::ScopedEventBaseThread(EventBaseManager* ebm)
 
 ScopedEventBaseThread::ScopedEventBaseThread(
     EventBaseManager* ebm,
-    const StringPiece& name)
+    StringPiece name)
     : ebm_(ebm ? ebm : EventBaseManager::get()) {
   new (&eb_) EventBase();
   th_ = thread(run, ebm_, &eb_, &stop_, name);

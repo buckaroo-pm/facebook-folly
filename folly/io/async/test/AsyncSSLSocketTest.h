@@ -20,6 +20,7 @@
 #include <folly/ExceptionWrapper.h>
 #include <folly/SocketAddress.h>
 #include <folly/experimental/TestUtil.h>
+#include <folly/fibers/FiberManagerMap.h>
 #include <folly/io/async/AsyncSSLSocket.h>
 #include <folly/io/async/AsyncServerSocket.h>
 #include <folly/io/async/AsyncSocket.h>
@@ -56,6 +57,12 @@ class SendMsgParamsCallbackBase
     socket_ = socket;
     oldCallback_ = socket_->getSendMsgParamsCB();
     socket_->setSendMsgParamCB(this);
+    socket_->setEorTracking(trackEor_);
+  }
+
+  void setEorTracking(bool track) {
+    CHECK(!socket_); // should only be called during setup
+    trackEor_ = track;
   }
 
   int getFlagsImpl(
@@ -73,6 +80,7 @@ class SendMsgParamsCallbackBase
   }
 
   std::shared_ptr<AsyncSSLSocket> socket_;
+  bool trackEor_{false};
   folly::AsyncSocket::SendMsgParamsCallback* oldCallback_{nullptr};
 };
 
@@ -97,15 +105,29 @@ class SendMsgFlagsCallback : public SendMsgParamsCallbackBase {
   int flags_{0};
 };
 
-class SendMsgDataCallback : public SendMsgFlagsCallback {
+class SendMsgAncillaryDataCallback : public SendMsgParamsCallbackBase {
  public:
-  SendMsgDataCallback() {}
+  SendMsgAncillaryDataCallback() {}
 
+  /**
+   * This data will be returned on calls to getAncillaryData.
+   */
   void resetData(std::vector<char>&& data) {
     ancillaryData_.swap(data);
   }
 
+  /**
+   * These flags were observed on the last call to getAncillaryData.
+   */
+  folly::WriteFlags getObservedWriteFlags() {
+    return observedWriteFlags_;
+  }
+
   void getAncillaryData(folly::WriteFlags flags, void* data) noexcept override {
+    // getAncillaryData is called through a long chain of functions after send
+    // record the observed write flags so we can compare later
+    observedWriteFlags_ = flags;
+
     if (ancillaryData_.size()) {
       std::cerr << "getAncillaryData: copying data" << std::endl;
       memcpy(data, ancillaryData_.data(), ancillaryData_.size());
@@ -123,6 +145,7 @@ class SendMsgDataCallback : public SendMsgFlagsCallback {
     }
   }
 
+  folly::WriteFlags observedWriteFlags_{};
   std::vector<char> ancillaryData_;
 };
 
@@ -204,25 +227,21 @@ class WriteCheckTimestampCallback : public WriteCallbackBase {
 
   ~WriteCheckTimestampCallback() override {
     EXPECT_EQ(STATE_SUCCEEDED, state);
-    EXPECT_TRUE(gotTimestamp_);
-    EXPECT_TRUE(gotByteSeq_);
   }
 
   void setSocket(const std::shared_ptr<AsyncSSLSocket>& socket) override {
     WriteCallbackBase::setSocket(socket);
 
-    EXPECT_NE(socket_->getFd(), 0);
+    EXPECT_NE(socket_->getNetworkSocket(), NetworkSocket());
     int flags = SOF_TIMESTAMPING_OPT_ID | SOF_TIMESTAMPING_OPT_TSONLY |
         SOF_TIMESTAMPING_SOFTWARE;
     AsyncSocket::OptionKey tstampingOpt = {SOL_SOCKET, SO_TIMESTAMPING};
-    int ret = tstampingOpt.apply(
-        folly::NetworkSocket::fromFd(socket_->getNetworkSocket().toFd()),
-        flags);
+    int ret = tstampingOpt.apply(socket_->getNetworkSocket(), flags);
     EXPECT_EQ(ret, 0);
   }
 
-  void checkForTimestampNotifications() noexcept {
-    int fd = socket_->getNetworkSocket().toFd();
+  std::vector<int32_t> getTimestampNotifications() noexcept {
+    auto fd = socket_->getNetworkSocket();
     std::vector<char> ctrl(1024, 0);
     unsigned char data;
     struct msghdr msg;
@@ -236,9 +255,14 @@ class WriteCheckTimestampCallback : public WriteCallbackBase {
     msg.msg_control = ctrl.data();
     msg.msg_controllen = ctrl.size();
 
+    std::vector<int32_t> timestampsFound;
+
+    folly::Optional<int32_t> timestampType;
+    bool gotTimestamp = false;
+    bool gotByteSeq = false;
     int ret;
     while (true) {
-      ret = recvmsg(fd, &msg, MSG_ERRQUEUE);
+      ret = netops::recvmsg(fd, &msg, MSG_ERRQUEUE);
       if (ret < 0) {
         if (errno != EAGAIN) {
           auto errnoCopy = errno;
@@ -250,7 +274,7 @@ class WriteCheckTimestampCallback : public WriteCallbackBase {
               errnoCopy);
           exception = ex;
         }
-        return;
+        return timestampsFound;
       }
 
       for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
@@ -258,21 +282,39 @@ class WriteCheckTimestampCallback : public WriteCallbackBase {
            cmsg = CMSG_NXTHDR(&msg, cmsg)) {
         if (cmsg->cmsg_level == SOL_SOCKET &&
             cmsg->cmsg_type == SCM_TIMESTAMPING) {
-          gotTimestamp_ = true;
-          continue;
+          CHECK(!gotTimestamp); // shouldn't already be set
+          gotTimestamp = true;
         }
 
         if ((cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR) ||
             (cmsg->cmsg_level == SOL_IPV6 && cmsg->cmsg_type == IPV6_RECVERR)) {
-          gotByteSeq_ = true;
-          continue;
-        }
-      }
-    }
-  }
+          const struct cmsghdr& cmsgh = *cmsg;
+          const auto serr = reinterpret_cast<const struct sock_extended_err*>(
+              CMSG_DATA(&cmsgh));
+          if (serr->ee_errno != ENOMSG ||
+              serr->ee_origin != SO_EE_ORIGIN_TIMESTAMPING) {
+            // not a timestamp
+            continue;
+          }
 
-  bool gotTimestamp_{false};
-  bool gotByteSeq_{false};
+          CHECK(!timestampType); // shouldn't already be set
+          CHECK(!gotByteSeq); // shouldn't already be set
+          gotByteSeq = true;
+          timestampType = serr->ee_info;
+        }
+
+        // check if we have both a timestamp and byte sequence
+        if (gotTimestamp && gotByteSeq) {
+          timestampsFound.push_back(*timestampType);
+          timestampType = folly::none;
+          gotTimestamp = false;
+          gotByteSeq = false;
+        }
+      } // for(...)
+    } // while(true)
+
+    return timestampsFound;
+  }
 };
 #endif // FOLLY_HAVE_MSG_ERRQUEUE
 
@@ -313,10 +355,16 @@ class ReadCallbackBase : public AsyncTransportWrapper::ReadCallback {
   StateEnum state;
 };
 
+/**
+ * ReadCallback reads data from the socket and then writes it back.
+ *
+ * It includes any folly::WriteFlags set via setWriteFlags(...) in its write
+ * back operation.
+ */
 class ReadCallback : public ReadCallbackBase {
  public:
   explicit ReadCallback(WriteCallbackBase* wcb)
-      : ReadCallbackBase(wcb), buffers() {}
+      : ReadCallbackBase(wcb), buffers(), writeFlags(folly::WriteFlags::NONE) {}
 
   ~ReadCallback() override {
     for (std::vector<Buffer>::iterator it = buffers.begin();
@@ -343,11 +391,18 @@ class ReadCallback : public ReadCallbackBase {
     wcb_->setSocket(socket_);
 
     // Write back the same data.
-    socket_->write(wcb_, currentBuffer.buffer, len);
+    socket_->write(wcb_, currentBuffer.buffer, len, writeFlags);
 
     buffers.push_back(currentBuffer);
     currentBuffer.reset();
     state = STATE_SUCCEEDED;
+  }
+
+  /**
+   * These flags will be used when writing the read data back to the socket.
+   */
+  void setWriteFlags(folly::WriteFlags flags) {
+    writeFlags = flags;
   }
 
   class Buffer {
@@ -375,6 +430,7 @@ class ReadCallback : public ReadCallbackBase {
 
   std::vector<Buffer> buffers;
   Buffer currentBuffer;
+  folly::WriteFlags writeFlags;
 };
 
 class ReadErrorCallback : public ReadCallbackBase {
@@ -430,7 +486,7 @@ class WriteErrorCallback : public ReadCallback {
     currentBuffer.length = len;
 
     // close the socket before writing to trigger writeError().
-    ::close(socket_->getNetworkSocket().toFd());
+    netops::close(socket_->getNetworkSocket());
 
     wcb_->setSocket(socket_);
 
@@ -584,14 +640,15 @@ class SSLServerAcceptCallbackDelay : public SSLServerAcceptCallback {
     auto sock = std::static_pointer_cast<AsyncSSLSocket>(s);
 
     std::cerr << "SSLServerAcceptCallbackDelay::connAccepted" << std::endl;
-    int fd = sock->getNetworkSocket().toFd();
+    auto fd = sock->getNetworkSocket();
 
 #ifndef TCP_NOPUSH
     {
       // The accepted connection should already have TCP_NODELAY set
       int value;
       socklen_t valueLength = sizeof(value);
-      int rc = getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &value, &valueLength);
+      int rc = netops::getsockopt(
+          fd, IPPROTO_TCP, TCP_NODELAY, &value, &valueLength);
       EXPECT_EQ(rc, 0);
       EXPECT_EQ(value, 1);
     }
@@ -600,37 +657,15 @@ class SSLServerAcceptCallbackDelay : public SSLServerAcceptCallback {
     // Unset the TCP_NODELAY option.
     int value = 0;
     socklen_t valueLength = sizeof(value);
-    int rc = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &value, valueLength);
+    int rc =
+        netops::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &value, valueLength);
     EXPECT_EQ(rc, 0);
 
-    rc = getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &value, &valueLength);
+    rc = netops::getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &value, &valueLength);
     EXPECT_EQ(rc, 0);
     EXPECT_EQ(value, 0);
 
     SSLServerAcceptCallback::connAccepted(sock);
-  }
-};
-
-class SSLServerAsyncCacheAcceptCallback : public SSLServerAcceptCallback {
- public:
-  explicit SSLServerAsyncCacheAcceptCallback(
-      HandshakeCallback* hcb,
-      uint32_t timeout = 0)
-      : SSLServerAcceptCallback(hcb, timeout) {}
-
-  void connAccepted(
-      const std::shared_ptr<folly::AsyncSSLSocket>& s) noexcept override {
-    auto sock = std::static_pointer_cast<AsyncSSLSocket>(s);
-
-    std::cerr << "SSLServerAcceptCallback::connAccepted" << std::endl;
-
-    hcb_->setSocket(sock);
-    sock->sslAccept(hcb_, std::chrono::milliseconds(timeout_));
-    ASSERT_TRUE(
-        (sock->getSSLState() == AsyncSSLSocket::STATE_ACCEPTING) ||
-        (sock->getSSLState() == AsyncSSLSocket::STATE_CACHE_LOOKUP));
-
-    state = STATE_SUCCEEDED;
   }
 };
 
@@ -710,71 +745,6 @@ class ConnectTimeoutCallback : public SSLServerAcceptCallbackBase {
     // Just wait a while before closing the socket, so the client
     // will time out waiting for the handshake to complete.
     s->getEventBase()->tryRunAfterDelay([=] { s->close(); }, 100);
-  }
-};
-
-class TestSSLAsyncCacheServer : public TestSSLServer {
- public:
-  explicit TestSSLAsyncCacheServer(
-      SSLServerAcceptCallbackBase* acb,
-      int lookupDelay = 100)
-      : TestSSLServer(acb) {
-    SSL_CTX* sslCtx = ctx_->getSSLCtx();
-#ifdef SSL_ERROR_WANT_SESS_CACHE_LOOKUP
-    SSL_CTX_sess_set_get_cb(
-        sslCtx, TestSSLAsyncCacheServer::getSessionCallback);
-#endif
-    SSL_CTX_set_session_cache_mode(
-        sslCtx, SSL_SESS_CACHE_NO_INTERNAL | SSL_SESS_CACHE_SERVER);
-    asyncCallbacks_ = 0;
-    asyncLookups_ = 0;
-    lookupDelay_ = lookupDelay;
-  }
-
-  uint32_t getAsyncCallbacks() const {
-    return asyncCallbacks_;
-  }
-  uint32_t getAsyncLookups() const {
-    return asyncLookups_;
-  }
-
- private:
-  static uint32_t asyncCallbacks_;
-  static uint32_t asyncLookups_;
-  static uint32_t lookupDelay_;
-
-  static SSL_SESSION* getSessionCallback(
-      SSL* ssl,
-      unsigned char* /* sess_id */,
-      int /* id_len */,
-      int* copyflag) {
-    *copyflag = 0;
-    asyncCallbacks_++;
-    (void)ssl;
-#ifdef SSL_ERROR_WANT_SESS_CACHE_LOOKUP
-    if (!SSL_want_sess_cache_lookup(ssl)) {
-      // libssl.so mismatch
-      std::cerr << "no async support" << std::endl;
-      return nullptr;
-    }
-
-    AsyncSSLSocket* sslSocket = AsyncSSLSocket::getFromSSL(ssl);
-    assert(sslSocket != nullptr);
-    // Going to simulate an async cache by just running delaying the miss 100ms
-    if (asyncCallbacks_ % 2 == 0) {
-      // This socket is already blocked on lookup, return miss
-      std::cerr << "returning miss" << std::endl;
-    } else {
-      // fresh meat - block it
-      std::cerr << "async lookup" << std::endl;
-      sslSocket->getEventBase()->tryRunAfterDelay(
-          std::bind(&AsyncSSLSocket::restartSSLAccept, sslSocket),
-          lookupDelay_);
-      *copyflag = SSL_SESSION_CB_WOULD_BLOCK;
-      asyncLookups_++;
-    }
-#endif
-    return nullptr;
   }
 };
 
@@ -1530,4 +1500,19 @@ class SSLAcceptDestroyRunner : public SSLAcceptEvbRunner {
   SSLHandshakeBase* sslBase_;
 };
 
+class SSLAcceptFiberRunner : public SSLAcceptEvbRunner {
+ public:
+  explicit SSLAcceptFiberRunner(EventBase* evb) : SSLAcceptEvbRunner(evb) {}
+  ~SSLAcceptFiberRunner() override = default;
+
+  void run(Function<int()> acceptFunc, Function<void(int)> finallyFunc)
+      const override {
+    auto& fiberManager = folly::fibers::getFiberManager(*evb_);
+    fiberManager.addTaskFinally(
+        std::move(acceptFunc),
+        [finally = std::move(finallyFunc)](folly::Try<int>&& res) mutable {
+          finally(res.value());
+        });
+  }
+};
 } // namespace folly

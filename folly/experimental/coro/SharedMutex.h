@@ -218,7 +218,7 @@ class SharedMutexFair {
       return mutex_->try_lock();
     }
 
-    bool await_suspend(
+    FOLLY_CORO_AWAIT_SUSPEND_NONTRIVIAL_ATTRIBUTES bool await_suspend(
         std::experimental::coroutine_handle<> continuation) noexcept {
       auto lock = mutex_->state_.contextualLock();
 
@@ -247,7 +247,7 @@ class SharedMutexFair {
       return mutex_->try_lock_shared();
     }
 
-    bool await_suspend(
+    FOLLY_CORO_AWAIT_SUSPEND_NONTRIVIAL_ATTRIBUTES bool await_suspend(
         std::experimental::coroutine_handle<> continuation) noexcept {
       auto lock = mutex_->state_.contextualLock();
 
@@ -298,12 +298,8 @@ class SharedMutexFair {
    public:
     explicit LockOperation(SharedMutexFair& mutex) noexcept : mutex_(mutex) {}
 
-    auto viaIfAsync(folly::Executor* executor) const {
-      return co_viaIfAsync(executor, Awaiter{mutex_});
-    }
-
-    friend auto co_viaIfAsync(folly::Executor* executor, LockOperation lockOp) {
-      return lockOp.viaIfAsync(executor);
+    auto viaIfAsync(folly::Executor::KeepAlive<> executor) const {
+      return folly::coro::co_viaIfAsync(std::move(executor), Awaiter{mutex_});
     }
 
    private:

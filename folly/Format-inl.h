@@ -32,9 +32,10 @@
 #include <folly/lang/Exception.h>
 #include <folly/portability/Windows.h>
 
-// Ignore -Wformat-nonliteral warnings within this file
+// Ignore -Wformat-nonliteral and -Wconversion warnings within this file
 FOLLY_PUSH_WARNING
 FOLLY_GNU_DISABLE_WARNING("-Wformat-nonliteral")
+FOLLY_GNU_DISABLE_WARNING("-Wconversion")
 
 namespace folly {
 
@@ -449,7 +450,9 @@ class FormatValue<
     char sign;
     if (std::is_signed<T>::value) {
       if (folly::is_negative(val_)) {
-        uval = UT(-static_cast<UT>(val_));
+        // avoid unary negation of unsigned types, which may be warned against
+        // avoid ub signed integer overflow, which ubsan checks against
+        uval = UT(0 - static_cast<UT>(val_));
         sign = '-';
       } else {
         uval = static_cast<UT>(val_);

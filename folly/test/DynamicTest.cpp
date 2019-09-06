@@ -16,6 +16,8 @@
 
 #include <folly/dynamic.h>
 
+#include <glog/logging.h>
+
 #include <folly/Range.h>
 #include <folly/json.h>
 #include <folly/portability/GTest.h>
@@ -1205,4 +1207,81 @@ TEST(Dynamic, JSONPointer) {
     EXPECT_EQ(target.get_ptr(json_pointer::parse("/foo")), err.context);
     EXPECT_EQ(nullptr, target.get_ptr(json_pointer::parse("/foo/-")));
   }
+}
+
+TEST(Dynamic, Math) {
+  // tests int-int, int-double, double-int, and double-double math operations
+  std::vector<dynamic> values = {2, 5.0};
+
+  // addition
+  for (auto value1 : values) {
+    for (auto value2 : values) {
+      auto testValue = value1;
+      testValue += value2;
+      EXPECT_NEAR(
+          value1.asDouble() + value2.asDouble(), testValue.asDouble(), 0.0001);
+    }
+  }
+
+  // subtraction
+  for (auto value1 : values) {
+    for (auto value2 : values) {
+      auto testValue = value1;
+      testValue -= value2;
+      EXPECT_NEAR(
+          value1.asDouble() - value2.asDouble(), testValue.asDouble(), 0.0001);
+    }
+  }
+
+  // multiplication
+  for (auto value1 : values) {
+    for (auto value2 : values) {
+      auto testValue = value1;
+      testValue *= value2;
+      EXPECT_NEAR(
+          value1.asDouble() * value2.asDouble(), testValue.asDouble(), 0.0001);
+    }
+  }
+
+  // division
+  for (auto value1 : values) {
+    for (auto value2 : values) {
+      auto testValue = value1;
+      testValue /= value2;
+      EXPECT_NEAR(
+          value1.asDouble() / value2.asDouble(), testValue.asDouble(), 0.0001);
+    }
+  }
+}
+
+dynamic buildNestedKeys(size_t depth) {
+  if (depth == 0) {
+    return dynamic(0);
+  }
+  return dynamic::object(buildNestedKeys(depth - 1), 0);
+}
+
+dynamic buildNestedValues(size_t depth) {
+  if (depth == 0) {
+    return dynamic(0);
+  }
+  return dynamic::object(0, buildNestedValues(depth - 1));
+}
+
+TEST(Dynamic, EqualNestedKeys) {
+  // This tests for exponential behavior in the depth of the keys.
+  // If it is exponential this test won't finish.
+  size_t const kDepth = 100;
+  dynamic obj1 = buildNestedKeys(kDepth);
+  dynamic obj2 = obj1;
+  EXPECT_EQ(obj1, obj2);
+}
+
+TEST(Dynamic, EqualNestedValues) {
+  // This tests for exponential behavior in the depth of the values.
+  // If it is exponential this test won't finish.
+  size_t const kDepth = 100;
+  dynamic obj1 = buildNestedValues(kDepth);
+  dynamic obj2 = obj1;
+  EXPECT_EQ(obj1, obj2);
 }
