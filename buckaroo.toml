@@ -37,9 +37,8 @@ package = "github.com/buckaroo-pm/google-glog"
 version = "branch=master"
 
 [[dependency]]
-package = "github.com/buckaroo-pm/google-googletest"
-version = "branch=master"
-private = true
+package = "github.com/buckaroo-pm/openssl"
+version = "tag=1.0.2p"
 
 [[dependency]]
 package = "github.com/buckaroo-pm/pkg-config-event"
@@ -48,3 +47,9 @@ version = "branch=master"
 [[dependency]]
 package = "github.com/buckaroo-pm/pkg-config-python2"
 version = "branch=master"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/google-googletest"
+version = "branch=master"
+private = true
+

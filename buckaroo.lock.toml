@@ -1,4 +1,4 @@
-manifest = "43b653073ff6323ed97ec4c157deff932bcbdb8735b36a0ad491dfb0d287e899"
+manifest = "c1e3570f5a3eee6102f0c5bf37a8547386565f487f71227fc676c4220037bc00"
 
 [[dependency]]
 package = "github.com/buckaroo-pm/boost-context"
@@ -39,6 +39,10 @@ target = "//:glog"
 [[dependency]]
 package = "github.com/buckaroo-pm/google-googletest"
 target = "//:googletest"
+
+[[dependency]]
+package = "github.com/buckaroo-pm/openssl"
+target = "//:openssl"
 
 [[dependency]]
 package = "github.com/buckaroo-pm/pkg-config-event"
@@ -311,6 +315,10 @@ revision = "cb8d2c1a2fcd344953e6c129a1a699a2c230551d"
 [lock."github.com/buckaroo-pm/icu4c"]
 versions = [ "branch=master" ]
 revision = "2bfbe715e2c1cd41e301b6a67fd50ae54273a504"
+
+[lock."github.com/buckaroo-pm/openssl"]
+versions = [ "tag=1.0.2p" ]
+revision = "1f1935327083eabb14370b43049f37839975c36f"
 
 [lock."github.com/buckaroo-pm/pkg-config-event"]
 versions = [ "branch=master" ]
