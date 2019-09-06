@@ -20,7 +20,7 @@ addons:
       - binutils-dev
       - libjemalloc-dev
       - libssl-dev
-      - libunwind-dev
+      - libunwind8-dev
       - pkg-config
 
 os:
