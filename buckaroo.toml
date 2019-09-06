@@ -48,7 +48,3 @@ version = "branch=master"
 [[dependency]]
 package = "github.com/buckaroo-pm/pkg-config-python2"
 version = "branch=master"
-
-[[dependency]]
-package = "github.com/buckaroo-pm/pkg-config-unwind"
-version = "branch=master"

@@ -1,4 +1,4 @@
-manifest = "a55a7f9f614c981488a584e7a1ec2e980e4a65700a42a94104812d8ce797183b"
+manifest = "43b653073ff6323ed97ec4c157deff932bcbdb8735b36a0ad491dfb0d287e899"
 
 [[dependency]]
 package = "github.com/buckaroo-pm/boost-context"
@@ -47,10 +47,6 @@ target = "//:event"
 [[dependency]]
 package = "github.com/buckaroo-pm/pkg-config-python2"
 target = "//:python2"
-
-[[dependency]]
-package = "github.com/buckaroo-pm/pkg-config-unwind"
-target = "//:unwind"
 
 [lock."github.com/buckaroo-pm/boost-algorithm"]
 versions = [ "branch=master" ]
@@ -323,7 +319,3 @@ revision = "f75b1279ba7c05af2b43a458f515c2719b8c67b0"
 [lock."github.com/buckaroo-pm/pkg-config-python2"]
 versions = [ "branch=master" ]
 revision = "155e43fcc4119d9265dece5511b78928fc8090a7"
-
-[lock."github.com/buckaroo-pm/pkg-config-unwind"]
-versions = [ "branch=master" ]
-revision = "f77f46164e2321375d0ffce429a9ac855499ec1b"
