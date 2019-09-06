@@ -10,10 +10,7 @@ addons:
       - g++-6
       - gcc-6
       - make
-      - libboost-all-dev
       - libevent-dev
-      - libdouble-conversion-dev
-      - libgoogle-glog-dev
       - libgflags-dev
       - libiberty-dev
       - liblz4-dev
@@ -23,6 +20,7 @@ addons:
       - binutils-dev
       - libjemalloc-dev
       - libssl-dev
+      - libunwind-dev
       - pkg-config
 
 os:
