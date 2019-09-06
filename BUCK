@@ -14,6 +14,7 @@ cxx_library(
   ], exclude = glob([
     'folly/**/benchmarks/**/*.cpp',
     'folly/**/exercises/**/*.cpp',
+    'folly/**/experimental/**/*.cpp',
     'folly/**/examples/**/*.cpp',
     'folly/**/test/**/*.cpp',
     'folly/experimental/JSONSchemaTester.cpp',
